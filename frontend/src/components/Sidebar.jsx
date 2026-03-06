@@ -1,9 +1,4 @@
-/**
- * Left sidebar: groups of blocks, each with a toggle.
- * Clicking the block name navigates to its editing panel.
- */
 export default function Sidebar({ schema, config, selected, onSelect, onToggle }) {
-  // Group blocks by their "group" field
   const groups = {}
   for (const block of schema) {
     const g = block.group || 'Other'
@@ -14,7 +9,14 @@ export default function Sidebar({ schema, config, selected, onSelect, onToggle }
   return (
     <aside className="w-56 bg-slate-900 border-r border-slate-700 flex flex-col overflow-y-auto shrink-0">
       <div className="px-4 py-3 border-b border-slate-700">
-        <h1 className="text-sm font-bold text-slate-200 leading-tight">TopCPToolkit</h1>
+        <a
+          href="https://topcptoolkit.docs.cern.ch/"
+          target="_blank"
+          rel="noreferrer"
+          className="text-sm font-bold text-slate-200 hover:text-blue-300 transition-colors leading-tight block"
+        >
+          TopCPToolkit
+        </a>
         <p className="text-xs text-slate-500 mt-0.5">Config Builder</p>
       </div>
 
@@ -36,7 +38,6 @@ export default function Sidebar({ schema, config, selected, onSelect, onToggle }
                       : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
                   }`}
                 >
-                  {/* Toggle */}
                   <button
                     type="button"
                     onClick={(e) => { e.stopPropagation(); onToggle(block.name) }}
@@ -50,7 +51,6 @@ export default function Sidebar({ schema, config, selected, onSelect, onToggle }
                     }`} />
                   </button>
 
-                  {/* Block name — click to select */}
                   <span
                     onClick={() => onSelect(block.name)}
                     className="text-sm leading-none flex-1 truncate"
@@ -58,7 +58,6 @@ export default function Sidebar({ schema, config, selected, onSelect, onToggle }
                     {block.label}
                   </span>
 
-                  {/* Repeatable badge */}
                   {block.repeatable && (
                     <span className="text-xs text-slate-600" title="Repeatable (list)">[]</span>
                   )}
