@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: itopcptoolkit
+  labels:
+    app: itopcptoolkit
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: itopcptoolkit
+  template:
+    metadata:
+      labels:
+        app: itopcptoolkit
+    spec:
+      containers:
+        - name: itopcptoolkit
+          image: registry.cern.ch/itopcptoolkit/itopcptoolkit:latest
+          ports:
+            - containerPort: 5000
+          env:
+            - name: PORT
+              value: "5000"
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "2Gi"
+              cpu: "1000m"
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 5000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 5000
+            initialDelaySeconds: 30
+            periodSeconds: 30

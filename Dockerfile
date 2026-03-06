@@ -75,6 +75,10 @@ COPY --from=frontend-build /app/frontend/dist /app/frontend/dist
 COPY start.sh /app/start.sh
 RUN chmod +x /app/start.sh
 
+# OpenShift runs containers as a random non-root UID.
+# Make /app and /opt world-writable so those UIDs can write logs/temp files.
+RUN chown -R 0:0 /app /opt && chmod -R g=u /app /opt
+
 WORKDIR /app
 EXPOSE 5000
 

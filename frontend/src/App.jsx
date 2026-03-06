@@ -131,15 +131,6 @@ export default function App() {
           📖 TopCPToolkit docs
         </a>
 
-        <a
-          href="https://ko-fi.com/baptisteravina"
-          target="_blank"
-          rel="noreferrer"
-          className="text-xs bg-yellow-800/50 text-yellow-300 hover:bg-yellow-700/50 hover:text-yellow-200 px-2 py-0.5 rounded transition-colors"
-        >
-          ☕ Buy me a coffee
-        </a>
-
         {exportMsg && (
           <span className="text-xs text-green-400">{exportMsg}</span>
         )}
