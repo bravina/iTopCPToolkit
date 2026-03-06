@@ -2,5 +2,8 @@
 @tailwind components;
 @tailwind utilities;
 
+/* KaTeX math rendering */
+@import 'katex/dist/katex.min.css';
+
 /* Monospace YAML preview */
 .yaml-preview { font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace; }

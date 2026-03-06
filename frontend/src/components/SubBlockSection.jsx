@@ -2,12 +2,16 @@ import OptionField from './OptionField.jsx'
 
 /**
  * Renders one sub-block (e.g. JVT, WorkingPoint, FlavourTagging) within a parent instance.
+ * Options whose names already appear in the parent block are hidden to avoid repetition.
  */
 export default function SubBlockSection({
-  subDef, subState,
+  subDef, subState, parentOptionNames = [],
   onToggle, onSetOption, onAddInstance, onRemoveInstance,
 }) {
-  const { name, label, repeatable, options = [] } = subDef
+  const { label, repeatable, options = [] } = subDef
+
+  // Filter out options that the parent already exposes
+  const filteredOptions = options.filter(opt => !parentOptionNames.includes(opt.name))
 
   return (
     <div className="border border-slate-600 rounded-lg overflow-hidden">
@@ -36,23 +40,21 @@ export default function SubBlockSection({
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-xs text-slate-400 font-mono">Instance {idx + 1}</span>
                   {subState.instances.length > 1 && (
-                    <button
-                      onClick={() => onRemoveInstance(si._id)}
-                      className="text-xs text-red-400 hover:text-red-300"
-                    >
+                    <button onClick={() => onRemoveInstance(si._id)}
+                      className="text-xs text-red-400 hover:text-red-300">
                       ✕ remove
                     </button>
                   )}
                 </div>
               )}
 
-              {options.length === 0 && (
+              {filteredOptions.length === 0 && (
                 <p className="text-xs text-slate-500 italic">
-                  No options introspected — will use defaults (rendered as {'{}'}).
+                  No unique options — all settings are inherited from the parent block.
                 </p>
               )}
 
-              {options.map(opt => (
+              {filteredOptions.map(opt => (
                 <OptionField
                   key={opt.name}
                   option={opt}
@@ -64,10 +66,8 @@ export default function SubBlockSection({
           ))}
 
           {repeatable && (
-            <button
-              onClick={onAddInstance}
-              className="mt-1 text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1"
-            >
+            <button onClick={onAddInstance}
+              className="mt-1 text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1">
               + Add {label} instance
             </button>
           )}

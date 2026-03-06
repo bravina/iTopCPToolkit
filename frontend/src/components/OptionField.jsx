@@ -1,3 +1,5 @@
+import InfoPopover from './InfoPopover.jsx'
+
 export default function OptionField({ option, value, onChange }) {
   const { name, type, default: defaultVal, info, required } = option
   const displayDefault = defaultVal === null ? 'None' : defaultVal === undefined ? '—' : String(defaultVal)
@@ -7,7 +9,7 @@ export default function OptionField({ option, value, onChange }) {
       <span className="text-sm font-mono font-semibold text-slate-200">{name}</span>
       <span className="text-xs text-slate-500 font-mono">({type})</span>
       {required && <span className="text-xs text-red-400">required</span>}
-      {info && <span className="ml-1 cursor-help text-slate-400 hover:text-blue-300 text-xs" title={info}>ⓘ</span>}
+      <InfoPopover info={info} />
     </div>
   )
 
@@ -65,7 +67,6 @@ export default function OptionField({ option, value, onChange }) {
       <input type="text" value={value === '' ? '' : String(value)} placeholder={displayDefault}
         onChange={e => onChange(e.target.value)}
         className="w-full rounded bg-slate-700 border border-slate-600 px-2 py-1 text-sm font-mono text-slate-100 focus:outline-none focus:border-blue-400" />
-      {info && <p className="text-xs text-slate-500 mt-0.5 leading-snug line-clamp-2">{info}</p>}
     </div>
   )
 }

@@ -7,13 +7,11 @@ WORKDIR /app/frontend
 COPY frontend/package*.json ./
 RUN npm install
 COPY frontend/ ./
-RUN npm run build          # outputs to /app/frontend/dist
+RUN npm run build
 
 # ── Stage 2: runtime (AnalysisBase + Flask) ───────────────────────────────────
-# Replace the tag below with the desired AnalysisBase release, e.g. 25.2.86
-# (could also use 'latest')
 ARG AB_TAG
-FROM gitlab-registry.cern.ch/atlas/athena/analysisbase:${AB_TAG}
+FROM --platform=linux/amd64 gitlab-registry.cern.ch/atlas/athena/analysisbase:${AB_TAG}
 
 USER root
 
@@ -25,13 +23,14 @@ RUN source /home/atlas/release_setup.sh \
  || (curl -sSL https://bootstrap.pypa.io/get-pip.py | python3)
 RUN source /home/atlas/release_setup.sh \
  && python3 -m pip install --quiet flask flask-cors pyyaml
+
 # Copy backend
 COPY backend/ /app/backend/
 
 # Copy built frontend
 COPY --from=frontend-build /app/frontend/dist /app/frontend/dist
 
-# Startup script — must source Athena env before launching Flask
+# Startup script — sources Athena env then launches Flask
 COPY start.sh /app/start.sh
 RUN chmod +x /app/start.sh
 

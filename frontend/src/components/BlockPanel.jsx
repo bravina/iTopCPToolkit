@@ -1,11 +1,6 @@
 import OptionField from './OptionField.jsx'
 import SubBlockSection from './SubBlockSection.jsx'
 
-/**
- * Main editing panel for a selected top-level block.
- * Shows all instances (with add/remove for repeatable blocks)
- * and their options + sub-blocks.
- */
 export default function BlockPanel({
   blockDef, blockState,
   onSetOption, onAddInstance, onRemoveInstance,
@@ -20,28 +15,26 @@ export default function BlockPanel({
   }
 
   const { options = [], sub_blocks = [], repeatable } = blockDef
+  // Names of options on the parent block — sub-blocks won't re-render these
+  const parentOptionNames = options.map(o => o.name)
 
   return (
     <div className="flex-1 overflow-y-auto p-4 space-y-6">
       {blockState.instances.map((inst, idx) => (
         <div key={inst._id} className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
-          {/* Instance header */}
           <div className="flex items-center justify-between px-4 py-2 bg-slate-700/50">
             <span className="text-sm font-semibold text-slate-300">
               {repeatable ? `${blockDef.label} — Instance ${idx + 1}` : blockDef.label}
             </span>
             {repeatable && blockState.instances.length > 1 && (
-              <button
-                onClick={() => onRemoveInstance(inst._id)}
-                className="text-xs text-red-400 hover:text-red-300"
-              >
+              <button onClick={() => onRemoveInstance(inst._id)}
+                className="text-xs text-red-400 hover:text-red-300">
                 ✕ Remove instance
               </button>
             )}
           </div>
 
           <div className="p-4 space-y-1">
-            {/* Options */}
             {options.length === 0 && sub_blocks.length === 0 && (
               <p className="text-xs text-slate-500 italic">
                 No options introspected — will be written as {'{}'}.
@@ -56,7 +49,6 @@ export default function BlockPanel({
               />
             ))}
 
-            {/* Sub-blocks */}
             {sub_blocks.length > 0 && (
               <div className="mt-4 space-y-2">
                 <p className="text-xs uppercase tracking-wider text-slate-500 font-semibold mb-1">
@@ -69,6 +61,7 @@ export default function BlockPanel({
                       key={subDef.name}
                       subDef={subDef}
                       subState={subState}
+                      parentOptionNames={parentOptionNames}
                       onToggle={() => onToggleSubBlock(inst._id, subDef.name)}
                       onSetOption={(subInstId, key, val) =>
                         onSetSubOption(inst._id, subDef.name, subInstId, key, val)}
@@ -84,7 +77,6 @@ export default function BlockPanel({
         </div>
       ))}
 
-      {/* Add instance button for repeatable top-level blocks */}
       {repeatable && (
         <button
           onClick={() => onAddInstance(blockDef.name, blockDef)}
