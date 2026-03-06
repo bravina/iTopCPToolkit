@@ -1,0 +1,14 @@
+services:
+  gui:
+    build:
+      context: .
+      args:
+        # Override with: docker-compose build --build-arg AB_TAG=25.2.86
+        AB_TAG: 25.2.86
+    ports:
+      - "5000:5000"
+    volumes:
+      # Mount a local directory for exported YAML files
+      - ./output:/output
+    environment:
+      - PORT=5000
