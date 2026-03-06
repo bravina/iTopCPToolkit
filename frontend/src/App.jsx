@@ -3,7 +3,7 @@ import Sidebar from './components/Sidebar.jsx'
 import BlockPanel from './components/BlockPanel.jsx'
 import YamlPreview from './components/YamlPreview.jsx'
 import { useConfig } from './hooks/useConfig.js'
-import { buildYamlObject } from './utils/yamlSerializer.js'
+import { buildYamlObject, toYamlString } from './utils/yamlSerializer.js'
 
 const API = import.meta.env.VITE_API_URL || ''
 
@@ -43,17 +43,11 @@ export default function App() {
       })
   }, [])
 
-  // ── Export: ask backend to return YAML, trigger browser download ───────────
+  // ── Export: render YAML in the browser, trigger download directly ────────────
   async function handleExport(filename) {
-    const yamlObj = buildYamlObject(config, schema)
     try {
-      const res = await fetch(`${API}/api/export-yaml`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ config: yamlObj, filename }),
-      })
-      if (!res.ok) throw new Error('Server error')
-      const blob = await res.blob()
+      const yamlText = toYamlString(config, schema)
+      const blob = new Blob([yamlText], { type: 'application/x-yaml' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
@@ -62,7 +56,7 @@ export default function App() {
       URL.revokeObjectURL(url)
       setExportMsg(`Downloaded ${filename}`)
     } catch {
-      setExportMsg('Export failed — backend unreachable')
+      setExportMsg('Export failed')
     }
     setTimeout(() => setExportMsg(null), 4000)
   }
