@@ -109,6 +109,15 @@ export default function App() {
           </span>
         )}
 
+        <a
+          href="https://topcptoolkit.docs.cern.ch/"
+          target="_blank"
+          rel="noreferrer"
+          className="text-xs bg-blue-800/50 text-blue-300 hover:bg-blue-700/50 hover:text-blue-200 px-2 py-0.5 rounded transition-colors"
+        >
+          📖 TopCPToolkit docs
+        </a>
+
         {exportMsg && (
           <span className="ml-auto text-xs text-green-400">{exportMsg}</span>
         )}
