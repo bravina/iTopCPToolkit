@@ -1,4 +1,5 @@
 import InfoPopover from './InfoPopover.jsx'
+import SelectionCutsDictEditor from './SelectionCutsDictEditor.jsx'
 
 export default function OptionField({ option, value, onChange }) {
   const { name, type, default: defaultVal, info, required } = option
@@ -12,6 +13,35 @@ export default function OptionField({ option, value, onChange }) {
       <InfoPopover info={info} />
     </div>
   )
+
+  // ── Special-cased options ─────────────────────────────────────────────────
+
+  if (name === 'selectionCutsDict') {
+    return (
+      <div className="py-1">
+        {label}
+        <SelectionCutsDictEditor value={value || {}} onChange={onChange} />
+      </div>
+    )
+  }
+
+  if (name === 'selectionCuts') {
+    return (
+      <div className="py-1">
+        {label}
+        <textarea
+          rows={6}
+          value={value === '' ? '' : String(value ?? '')}
+          onChange={e => onChange(e.target.value)}
+          spellCheck={false}
+          placeholder="One cut per line…"
+          className="w-full rounded bg-slate-700 border border-slate-600 px-2 py-1 text-sm font-mono text-slate-100 focus:outline-none focus:border-blue-400 resize-y"
+        />
+      </div>
+    )
+  }
+
+  // ── Generic type renderers ────────────────────────────────────────────────
 
   if (type === 'bool') {
     const checked = value === '' ? Boolean(defaultVal) : Boolean(value)

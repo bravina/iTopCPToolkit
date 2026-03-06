@@ -128,7 +128,6 @@ BLOCK_TREE = [
                 "name": "WorkingPoint",
                 "label": "Working Point",
                 "repeatable": True,
-                # ElectronWorkingPoint is a function; fall back to the selection config class
                 "class_path": "EgammaAnalysisAlgorithms.ElectronAnalysisConfig.ElectronWorkingPointSelectionConfig",
                 "is_function": False,
                 "sub_blocks": [],
@@ -292,9 +291,9 @@ BLOCK_TREE = [
         "name": "EventSelection",
         "label": "Event Selection",
         "group": "Selection",
-        "repeatable": True,
-        "class_path": "EventSelectionAlgorithms.EventSelectionConfig.EventSelectionConfig",
-        "is_function": False,
+        "repeatable": False,  # selectionCutsDict handles all regions internally
+        "class_path": "EventSelectionAlgorithms.EventSelectionConfig.makeMultipleEventSelectionConfigs",
+        "is_function": True,
         "sub_blocks": [],
     },
     {
