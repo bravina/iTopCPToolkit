@@ -15,27 +15,40 @@ export function buildYamlObject(configState, schema) {
   return result
 }
 
-function stripEmpty(obj) {
-  const out = {}
-  for (const [k, v] of Object.entries(obj)) { if (v !== '') out[k] = v }
-  return out
+/** Loose equality check for option defaults (handles null, '', numbers, booleans). */
+function isDefault(value, defaultVal) {
+  if (value === '' || value === undefined) return true
+  if (defaultVal === null || defaultVal === undefined) return false
+  // Compare by value for primitives; JSON-stringify for arrays/objects
+  if (typeof defaultVal === 'object') {
+    return JSON.stringify(value) === JSON.stringify(defaultVal)
+  }
+  // Coerce to the same type for comparison (e.g. "25000" vs 25000)
+  return value === defaultVal || String(value) === String(defaultVal)
 }
 
 function serializeInstance(inst, blockDef) {
-  const opts = stripEmpty(inst?.options || {})
+  const optDefaults = Object.fromEntries((blockDef.options || []).map(o => [o.name, o.default]))
+  const opts = {}
+
+  for (const [k, v] of Object.entries(inst?.options || {})) {
+    if (isDefault(v, optDefaults[k])) continue
+    opts[k] = v
+  }
+
   for (const subDef of (blockDef.sub_blocks || [])) {
     const subState = inst?.sub_blocks?.[subDef.name]
     if (!subState?.enabled) continue
     if (subDef.repeatable) {
       opts[subDef.name] = subState.instances.map(si => {
-        const sopts = stripEmpty(si.options || {})
-        return Object.keys(sopts).length ? sopts : null
+        const sopts = serializeInstance(si, subDef)
+        return sopts !== null ? sopts : null
       })
     } else {
-      const sopts = stripEmpty(subState.instances[0]?.options || {})
-      opts[subDef.name] = Object.keys(sopts).length ? sopts : null
+      opts[subDef.name] = serializeInstance(subState.instances[0], subDef)
     }
   }
+
   return Object.keys(opts).length ? opts : null
 }
 
@@ -49,5 +62,10 @@ function replaceNulls(v) {
 export function toYamlString(configState, schema) {
   const obj = buildYamlObject(configState, schema)
   if (!Object.keys(obj).length) return '# No blocks enabled yet\n'
-  return yaml.dump(replaceNulls(obj), { lineWidth: 120, sortKeys: false, quotingType: "'", noRefs: true })
+
+  // Dump each top-level block separately and join with blank lines for readability
+  const blocks = Object.entries(replaceNulls(obj)).map(([key, value]) =>
+    yaml.dump({ [key]: value }, { lineWidth: 120, sortKeys: false, quotingType: "'", noRefs: true })
+  )
+  return blocks.join('\n')
 }
