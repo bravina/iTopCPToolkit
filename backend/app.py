@@ -23,7 +23,8 @@ from introspect import get_options
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("app")
 
-APP_VERSION = "0.1.0"
+_version_file = os.path.join(os.path.dirname(__file__), "..", "VERSION")
+APP_VERSION = open(_version_file).read().strip()
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
 app = Flask(__name__, static_folder=STATIC_DIR if os.path.isdir(STATIC_DIR) else None)

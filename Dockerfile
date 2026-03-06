@@ -67,6 +67,7 @@ RUN --mount=type=secret,id=cern_token \
 
 # Copy backend
 COPY backend/ /app/backend/
+COPY VERSION /app/VERSION
 
 # Copy built frontend
 COPY --from=frontend-build /app/frontend/dist /app/frontend/dist
