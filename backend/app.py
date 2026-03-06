@@ -4,16 +4,17 @@ TopCPToolkit GUI – Flask backend.
 Endpoints
 ---------
 GET  /api/schema           Full block tree with introspected options
-POST /api/export-yaml      Write YAML config to a file path on disk
-GET  /api/health           Liveness check; reports whether Athena is available
+GET  /api/health           Liveness check; reports Athena + version info
+POST /api/export-yaml      Returns YAML content as a downloadable response
 """
 
 import copy
+import glob
 import logging
 import os
 
 import yaml
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, request, send_from_directory, Response
 from flask_cors import CORS
 
 from block_schema import BLOCK_TREE
@@ -21,6 +22,8 @@ from introspect import get_options
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("app")
+
+APP_VERSION = "0.1.0"
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
 app = Flask(__name__, static_folder=STATIC_DIR if os.path.isdir(STATIC_DIR) else None)
@@ -36,6 +39,20 @@ def _build_schema():
         b["sub_blocks"] = [enrich(sb) for sb in b["sub_blocks"]]
         return b
     return [enrich(b) for b in BLOCK_TREE]
+
+
+def _get_ab_version():
+    """Try to determine the AnalysisBase release version."""
+    # 1. Environment variable set by release_setup.sh
+    for var in ("AnalysisBase_VERSION", "ANALYSISBASE_VERSION", "AtlasVersion"):
+        v = os.environ.get(var)
+        if v:
+            return v
+    # 2. Parse from the install path
+    paths = glob.glob("/usr/AnalysisBase/*/InstallArea")
+    if paths:
+        return paths[0].split("/")[3]
+    return None
 
 
 @app.before_request
@@ -54,7 +71,12 @@ def health():
         athena_ok = True
     except ImportError:
         athena_ok = False
-    return jsonify({"status": "ok", "athena": athena_ok})
+    return jsonify({
+        "status": "ok",
+        "athena": athena_ok,
+        "app_version": APP_VERSION,
+        "ab_version": _get_ab_version(),
+    })
 
 
 @app.route("/api/schema")
@@ -64,14 +86,22 @@ def schema():
 
 @app.route("/api/export-yaml", methods=["POST"])
 def export_yaml():
+    """Return the YAML as a file download — no server-side writing needed."""
     payload = request.get_json(force=True)
     config = payload.get("config", {})
-    filepath = payload.get("filepath", "/tmp/analysis_config.yaml")
-    os.makedirs(os.path.dirname(os.path.abspath(filepath)), exist_ok=True)
-    with open(filepath, "w") as fh:
-        yaml.dump(config, fh, default_flow_style=False, sort_keys=False, allow_unicode=True)
-    logger.info("Exported YAML → %s", filepath)
-    return jsonify({"success": True, "filepath": filepath})
+    filename = payload.get("filename", "analysis_config.yaml")
+
+    content = yaml.dump(config, default_flow_style=False, sort_keys=False,
+                        allow_unicode=True)
+
+    return Response(
+        content,
+        mimetype="application/x-yaml",
+        headers={
+            "Content-Disposition": f"attachment; filename={filename}",
+            "Content-Type": "application/x-yaml",
+        },
+    )
 
 
 @app.route("/", defaults={"path": ""})

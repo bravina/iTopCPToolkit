@@ -12,8 +12,9 @@ export default function App() {
   const [selected, setSelected] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [exportPath, setExportPath] = useState('/tmp/analysis_config.yaml')
   const [exportMsg, setExportMsg] = useState(null)
+  const [appVersion, setAppVersion] = useState(null)
+  const [abVersion, setAbVersion] = useState(null)
   const [athena, setAthena] = useState(null)
 
   const {
@@ -22,7 +23,6 @@ export default function App() {
     toggleSubBlock, setSubOption, addSubInstance, removeSubInstance,
   } = useConfig()
 
-  // ── Fetch schema from backend ──────────────────────────────────────────────
   useEffect(() => {
     Promise.all([
       fetch(`${API}/api/schema`).then(r => r.json()),
@@ -31,6 +31,8 @@ export default function App() {
       .then(([schemaData, health]) => {
         setSchema(schemaData)
         setAthena(health.athena)
+        setAppVersion(health.app_version)
+        setAbVersion(health.ab_version)
         init(schemaData)
         setSelected(schemaData[0]?.name ?? null)
         setLoading(false)
@@ -41,24 +43,30 @@ export default function App() {
       })
   }, [])
 
-  // ── Export YAML ────────────────────────────────────────────────────────────
-  async function handleExport() {
+  // ── Export: ask backend to return YAML, trigger browser download ───────────
+  async function handleExport(filename) {
     const yamlObj = buildYamlObject(config, schema)
     try {
       const res = await fetch(`${API}/api/export-yaml`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ config: yamlObj, filepath: exportPath }),
+        body: JSON.stringify({ config: yamlObj, filename }),
       })
-      const data = await res.json()
-      setExportMsg(data.success ? `Saved to ${data.filepath}` : 'Export failed')
+      if (!res.ok) throw new Error('Server error')
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      a.click()
+      URL.revokeObjectURL(url)
+      setExportMsg(`Downloaded ${filename}`)
     } catch {
       setExportMsg('Export failed — backend unreachable')
     }
     setTimeout(() => setExportMsg(null), 4000)
   }
 
-  // ── Selected block ─────────────────────────────────────────────────────────
   const selectedDef = schema.find(b => b.name === selected)
   const selectedState = config[selected]
 
@@ -81,32 +89,31 @@ export default function App() {
     <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col">
       {/* Top bar */}
       <header className="h-10 bg-slate-800 border-b border-slate-700 flex items-center px-4 gap-4 shrink-0">
-        <span className="text-sm font-bold text-blue-400">iTopCPToolkit 2026</span>
+        <span className="text-sm font-bold text-blue-400">
+          iTopCPToolkit{appVersion ? ` v${appVersion}` : ''}
+        </span>
+
         {athena === false && (
           <span className="text-xs bg-yellow-800/50 text-yellow-300 px-2 py-0.5 rounded">
             ⚠ Athena not available — options may be empty
           </span>
         )}
-        {athena === true && (
+        {athena === true && abVersion && (
+          <span className="text-xs bg-green-800/50 text-green-300 px-2 py-0.5 rounded">
+            ✓ AnalysisBase {abVersion}
+          </span>
+        )}
+        {athena === true && !abVersion && (
           <span className="text-xs bg-green-800/50 text-green-300 px-2 py-0.5 rounded">
             ✓ Athena environment loaded
           </span>
         )}
-        <div className="ml-auto flex items-center gap-2">
-          <span className="text-xs text-slate-500">Export path:</span>
-          <input
-            type="text"
-            value={exportPath}
-            onChange={e => setExportPath(e.target.value)}
-            className="text-xs font-mono bg-slate-700 border border-slate-600 rounded px-2 py-0.5 w-72 text-slate-200 focus:outline-none focus:border-blue-400"
-          />
-          {exportMsg && (
-            <span className="text-xs text-green-400">{exportMsg}</span>
-          )}
-        </div>
+
+        {exportMsg && (
+          <span className="ml-auto text-xs text-green-400">{exportMsg}</span>
+        )}
       </header>
 
-      {/* Main layout: sidebar | editing panel | yaml preview */}
       <div className="flex flex-1 overflow-hidden">
         <Sidebar
           schema={schema}
@@ -116,11 +123,9 @@ export default function App() {
           onToggle={toggleBlock}
         />
 
-        {/* Centre panel */}
         <main className="flex-1 flex flex-col overflow-hidden bg-slate-850">
           {selectedDef ? (
             <>
-              {/* Panel header */}
               <div className="px-5 py-3 border-b border-slate-700 bg-slate-800 shrink-0">
                 <h2 className="font-bold text-slate-100">{selectedDef.label}</h2>
                 <p className="text-xs text-slate-500 font-mono mt-0.5">{selectedDef.class_path}</p>
