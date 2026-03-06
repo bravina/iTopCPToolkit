@@ -1,4 +1,4 @@
-export default function Sidebar({ schema, config, selected, onSelect, onToggle }) {
+export default function Sidebar({ schema, config, selected, onSelect, onToggle, docsUrl }) {
   const groups = {}
   for (const block of schema) {
     const g = block.group || 'Other'
@@ -10,7 +10,7 @@ export default function Sidebar({ schema, config, selected, onSelect, onToggle }
     <aside className="w-56 bg-slate-900 border-r border-slate-700 flex flex-col overflow-y-auto shrink-0">
       <div className="px-4 py-3 border-b border-slate-700">
         <a
-          href="https://topcptoolkit.docs.cern.ch/"
+          href={docsUrl}
           target="_blank"
           rel="noreferrer"
           className="text-sm font-bold text-slate-200 hover:text-blue-300 transition-colors leading-tight block"

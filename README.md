@@ -32,6 +32,27 @@ Or with compose:
 docker-compose up --build
 ```
 
+### Adding TopCPToolkit source code
+
+```bash
+# No TCT (fast, default)
+docker build --build-arg AB_TAG=25.2.86 -t tct-gui .
+
+# Latest TCT from main
+docker build \
+  --secret id=cern_token,env=CERN_TOKEN \
+  --build-arg AB_TAG=25.2.86 \
+  --build-arg TCT_VERSION=latest \
+  -t tct-gui .
+
+# Specific TCT tag
+docker build \
+  --secret id=cern_token,env=CERN_TOKEN \
+  --build-arg AB_TAG=25.2.86 \
+  --build-arg TCT_VERSION=2.24.0 \
+  -t tct-gui .
+```
+
 ### Local development (no Athena — options will be empty)
 
 ```bash

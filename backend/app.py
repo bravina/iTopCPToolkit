@@ -43,16 +43,24 @@ def _build_schema():
 
 def _get_ab_version():
     """Try to determine the AnalysisBase release version."""
-    # 1. Environment variable set by release_setup.sh
     for var in ("AnalysisBase_VERSION", "ANALYSISBASE_VERSION", "AtlasVersion"):
         v = os.environ.get(var)
         if v:
             return v
-    # 2. Parse from the install path
     paths = glob.glob("/usr/AnalysisBase/*/InstallArea")
     if paths:
         return paths[0].split("/")[3]
     return None
+
+
+def _get_tct_version():
+    """Read the TopCPToolkit version written by the Dockerfile build step."""
+    marker = "/opt/tct_version.txt"
+    try:
+        version = open(marker).read().strip()
+        return None if version == "none" else version
+    except FileNotFoundError:
+        return None
 
 
 @app.before_request
@@ -76,6 +84,7 @@ def health():
         "athena": athena_ok,
         "app_version": APP_VERSION,
         "ab_version": _get_ab_version(),
+        "tct_version": _get_tct_version(),
     })
 
 

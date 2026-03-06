@@ -15,6 +15,7 @@ export default function App() {
   const [exportMsg, setExportMsg] = useState(null)
   const [appVersion, setAppVersion] = useState(null)
   const [abVersion, setAbVersion] = useState(null)
+  const [tctVersion, setTctVersion] = useState(undefined)  // undefined = not yet loaded
   const [athena, setAthena] = useState(null)
 
   const {
@@ -33,6 +34,7 @@ export default function App() {
         setAthena(health.athena)
         setAppVersion(health.app_version)
         setAbVersion(health.ab_version)
+        setTctVersion(health.tct_version ?? null)
         init(schemaData)
         setSelected(schemaData[0]?.name ?? null)
         setLoading(false)
@@ -62,6 +64,13 @@ export default function App() {
   }
 
   const selectedDef = schema.find(b => b.name === selected)
+
+  // Build versioned docs URL based on TCT version
+  const docsUrl = tctVersion === undefined || tctVersion === null
+    ? 'https://topcptoolkit.docs.cern.ch/'
+    : tctVersion === 'latest'
+      ? 'https://topcptoolkit.docs.cern.ch/latest/'
+      : `https://topcptoolkit.docs.cern.ch/${tctVersion}/`
   const selectedState = config[selected]
 
   if (loading) return (
@@ -103,8 +112,18 @@ export default function App() {
           </span>
         )}
 
+        {tctVersion !== undefined && (
+          tctVersion
+            ? <span className="text-xs bg-green-800/50 text-green-300 px-2 py-0.5 rounded">
+                ✓ TopCPToolkit {tctVersion}
+              </span>
+            : <span className="text-xs bg-red-800/50 text-red-300 px-2 py-0.5 rounded">
+                ✗ No TopCPToolkit built
+              </span>
+        )}
+
         <a
-          href="https://topcptoolkit.docs.cern.ch/"
+          href={docsUrl}
           target="_blank"
           rel="noreferrer"
           className="text-xs bg-blue-800/50 text-blue-300 hover:bg-blue-700/50 hover:text-blue-200 px-2 py-0.5 rounded transition-colors"
@@ -133,6 +152,7 @@ export default function App() {
           selected={selected}
           onSelect={setSelected}
           onToggle={toggleBlock}
+          docsUrl={docsUrl}
         />
 
         <main className="flex-1 flex flex-col overflow-hidden bg-slate-850">
