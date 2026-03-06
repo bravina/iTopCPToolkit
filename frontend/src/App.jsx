@@ -81,7 +81,7 @@ export default function App() {
     <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col">
       {/* Top bar */}
       <header className="h-10 bg-slate-800 border-b border-slate-700 flex items-center px-4 gap-4 shrink-0">
-        <span className="text-sm font-bold text-blue-400">TCT Config GUI</span>
+        <span className="text-sm font-bold text-blue-400">iTopCPToolkit 2026</span>
         {athena === false && (
           <span className="text-xs bg-yellow-800/50 text-yellow-300 px-2 py-0.5 rounded">
             ⚠ Athena not available — options may be empty
