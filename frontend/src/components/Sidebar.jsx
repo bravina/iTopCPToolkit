@@ -7,7 +7,7 @@ export default function Sidebar({ schema, config, selected, onSelect, onToggle, 
   }
 
   return (
-    <aside className="w-56 bg-slate-900 border-r border-slate-700 flex flex-col overflow-y-auto shrink-0">
+    <aside className="h-full bg-slate-900 border-r border-slate-700 flex flex-col overflow-y-auto">
       <div className="px-4 py-3 border-b border-slate-700">
         <a
           href={docsUrl}

@@ -14,7 +14,7 @@ export default function YamlPreview({ config, schema, onExport }) {
   }
 
   return (
-    <div className="w-96 bg-slate-900 border-l border-slate-700 flex flex-col shrink-0">
+    <div className="h-full bg-slate-900 border-l border-slate-700 flex flex-col">
       <div className="px-4 py-3 border-b border-slate-700 space-y-2">
         <div className="flex items-center justify-between">
           <span className="text-sm font-semibold text-slate-200">YAML Preview</span>
