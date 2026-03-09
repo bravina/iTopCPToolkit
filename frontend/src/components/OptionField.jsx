@@ -1,4 +1,5 @@
 import InfoPopover from './InfoPopover.jsx'
+import SelectionCutsDictEditor from './SelectionCutsDictEditor.jsx'
 import CollectionField from './CollectionField.jsx'
 import { getAutocompleteMode } from '../utils/collectionRegistry.js'
 
@@ -131,6 +132,7 @@ function ListField({ opt, value, onChange }) {
   )
 }
 
+
 // ── Main component ─────────────────────────────────────────────────────────────
 
 /**
@@ -160,6 +162,9 @@ export default function OptionField({ option: opt, value, onChange, blockName, d
     }
     if (type === 'list') {
       return <ListField opt={opt} value={value} onChange={onChange} />
+    }
+    if (opt.name === 'selectionCutsDict') {
+      return <SelectionCutsDictEditor value={value || {}} onChange={onChange} />
     }
     return <StringField opt={opt} value={value} onChange={onChange} blockName={blockName} />
   }
