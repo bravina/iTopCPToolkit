@@ -34,10 +34,6 @@ jobs:
           [ -n "${AB_TAG}" ] && BUILD_ARGS="${BUILD_ARGS} --build-arg AB_TAG=${AB_TAG}"
           [ -n "${TCT_VERSION}" ] && BUILD_ARGS="${BUILD_ARGS} --build-arg TCT_VERSION=${TCT_VERSION}"
 
-          if [ -n "${CERN_TOKEN}" ] && [ -n "${TCT_VERSION}" ]; then
-            docker build ${BUILD_ARGS} --secret id=cern_token,env=CERN_TOKEN -t "${IMAGE}" .
-          else
-            docker build ${BUILD_ARGS} -t "${IMAGE}" .
-          fi
+          docker build ${BUILD_ARGS} --secret id=cern_token,env=CERN_TOKEN -t "${IMAGE}" .
 
           docker push "${IMAGE}"
