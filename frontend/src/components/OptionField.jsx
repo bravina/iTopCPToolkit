@@ -15,7 +15,6 @@ function parseTypedValue(raw, type) {
     return isNaN(n) ? raw : n
   }
   if (type === 'list') {
-    // Accept comma-separated or JSON array strings
     if (typeof raw === 'string') {
       try { return JSON.parse(raw) } catch { /* fall through */ }
       return raw.split(',').map(s => s.trim()).filter(Boolean)
@@ -135,13 +134,14 @@ function ListField({ opt, value, onChange }) {
  * Renders a single option row.
  *
  * Props:
- *   opt        – option definition from schema { name, type, default, info, required, noneAction }
+ *   option     – option definition from schema { name, type, default, info, required, noneAction }
+ *                (passed as `option` prop by callers; aliased to `opt` internally)
  *   value      – current value (from block instance options)
  *   onChange   – (newValue) => void
  *   blockName  – name of the parent block (for collection autocomplete + data-option attribute)
  *   depIssues  – array of dependency issues from checkDepsFromState (optional)
  */
-export default function OptionField({ opt, value, onChange, blockName, depIssues }) {
+export default function OptionField({ option: opt, value, onChange, blockName, depIssues }) {
   const depWarning = depIssues?.find(i => i.path.endsWith(`.${opt.name}`))?.message
 
   const isRequired = opt.required || opt.noneAction === 'error'
@@ -158,7 +158,6 @@ export default function OptionField({ opt, value, onChange, blockName, depIssues
     if (type === 'list') {
       return <ListField opt={opt} value={value} onChange={onChange} />
     }
-    // str, None, or unknown
     return <StringField opt={opt} value={value} onChange={onChange} blockName={blockName} />
   }
 

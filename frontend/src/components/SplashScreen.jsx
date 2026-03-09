@@ -7,8 +7,21 @@ function easeInQuad(t)     { return t * t }
 function easeWave(t)       { return t - Math.sin(4 * Math.PI * t) / (4 * Math.PI) }
 
 // ── Palette ───────────────────────────────────────────────────────────────────
-const COLOURS = ['#ffffff', '#f4f4f4', '#e0e0e0', '#cccccc', '#b8b8b8', '#d4d4d4']
-function randColour() { return COLOURS[Math.floor(Math.random() * COLOURS.length)] }
+// Blue shades for "i" and "CP", white/grey shades for "Top" and "Toolkit"
+const BLUE_COLOURS  = ['#60a5fa', '#93c5fd', '#3b82f6', '#bfdbfe', '#7dd3fc', '#a3c4fd']
+const WHITE_COLOURS = ['#ffffff', '#f4f4f4', '#e0e0e0', '#cccccc', '#b8b8b8', '#d4d4d4']
+
+function randBlue()  { return BLUE_COLOURS[Math.floor(Math.random() * BLUE_COLOURS.length)] }
+function randWhite() { return WHITE_COLOURS[Math.floor(Math.random() * WHITE_COLOURS.length)] }
+
+// Assign colour based on which text segment the pixel belongs to:
+//   "i" → blue  |  "Top" → white  |  "CP" → blue  |  "Toolkit" → white
+function segmentColour(tx, segBoundaries) {
+  if (tx < segBoundaries[0]) return randBlue()   // "i"
+  if (tx < segBoundaries[1]) return randWhite()  // "Top"
+  if (tx < segBoundaries[2]) return randBlue()   // "CP"
+  return randWhite()                             // "Toolkit"
+}
 
 const PHASE_DURATION = { 'fly-in': 2000, hold: 900, 'blow-away-line': 500, 'blow-away': 1400, fade: 600 }
 const NEXT_PHASE     = { 'fly-in': 'hold', hold: 'blow-away-line', 'blow-away-line': 'blow-away', 'blow-away': 'fade' }
@@ -32,10 +45,12 @@ function sampleTextPixels(W, H) {
   off.width = W; off.height = H
   const ctx = off.getContext('2d')
   const fontSize = Math.min(W / 6.5, 140)
-  ctx.fillStyle = '#fff'
   ctx.font = `900 ${fontSize}px 'Nunito', 'Courier New', monospace`
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
+
+  // Draw full text in white to sample all pixels
+  ctx.fillStyle = '#fff'
   ctx.fillText('iTopCPToolkit', W / 2, H / 2)
 
   const metrics    = ctx.measureText('iTopCPToolkit')
@@ -45,18 +60,22 @@ function sampleTextPixels(W, H) {
   const underlineY = H / 2 + fontSize * 0.60
   const underlineT = Math.max(10, fontSize * 0.13)
 
+  // Compute x-boundaries for each segment: "i", "iTop", "iTopCP"
+  // Pixels left of boundary[0] → "i", between [0] and [1] → "Top", etc.
+  const segBoundaries = ['i', 'iTop', 'iTopCP'].map(seg => textLeft + ctx.measureText(seg).width)
+
   const data = ctx.getImageData(0, 0, W, H).data
   const pts  = []
-  const step = 3   // finer sampling → more particles, denser text shape
+  const step = 3
   for (let y = 0; y < H; y += step)
     for (let x = 0; x < W; x += step)
       if (data[(y * W + x) * 4 + 3] > 128) pts.push({ x, y })
 
-  return { pts, textLeft, textRight, underlineY, underlineT, fontSize }
+  return { pts, textLeft, textRight, underlineY, underlineT, fontSize, segBoundaries }
 }
 
 // ── Letter particles ──────────────────────────────────────────────────────────
-function buildLetterParticles(W, H, pts) {
+function buildLetterParticles(W, H, pts, segBoundaries) {
   const maxPts = 2400
   const thin   = Math.max(1, Math.floor(pts.length / maxPts))
   return pts.filter((_, i) => i % thin === 0).map(t => {
@@ -73,8 +92,8 @@ function buildLetterParticles(W, H, pts) {
       blowVx: Math.cos(blowAngle) * blowSpeed,
       blowVy: Math.sin(blowAngle) * blowSpeed - 50 * Math.random(),
       blowSx: 0, blowSy: 0,
-      colour: randColour(),
-      size:   0.7 + Math.random() * 0.9,   // finer
+      colour: segmentColour(t.x, segBoundaries),
+      size:   0.7 + Math.random() * 0.9,
       delay:  Math.random() * 0.35,
       freq:   2 + Math.random() * 3,
       amp:    0.4 + Math.random() * 0.6,
@@ -89,12 +108,10 @@ function buildUnderlineParticles(textLeft, textRight, underlineY, underlineT) {
     const frac      = i / (count - 1)
     const tx        = textLeft + frac * (textRight - textLeft)
     const ty        = underlineY + (Math.random() - 0.5) * underlineT
-    // Stagger: spread arrivals across 0.2 → 0.85 of fly-in, left-to-right
     const arrivalT  = 0.20 + frac * 0.65
     const window    = 0.14
-    // Blow-away: sweep rightward across full screen, slight vertical spread
     const blowSpeed = 2200 + Math.random() * 600
-    const blowAngle = (Math.random() - 0.5) * 0.06   // very nearly horizontal
+    const blowAngle = (Math.random() - 0.5) * 0.06
     return {
       x: textLeft - 80, y: ty,
       sx: textLeft - 80, sy: ty,
@@ -102,8 +119,8 @@ function buildUnderlineParticles(textLeft, textRight, underlineY, underlineT) {
       blowVx: Math.cos(blowAngle) * blowSpeed,
       blowVy: Math.sin(blowAngle) * blowSpeed,
       blowSx: 0, blowSy: 0,
-      colour: randColour(),
-      size:   1.0 + Math.random() * 1.2,   // visible line
+      colour: randBlue(),   // underline is blue (accent color)
+      size:   1.0 + Math.random() * 1.2,
       freq:   2 + Math.random() * 3,
       amp:    0.3 + Math.random() * 0.5,
     }
@@ -113,6 +130,15 @@ function buildUnderlineParticles(textLeft, textRight, underlineY, underlineT) {
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function SplashScreen({ onDone, version }) {
   const canvasRef = useRef(null)
+
+  // Escape key skips the splash immediately
+  useEffect(() => {
+    function handleKey(e) {
+      if (e.key === 'Escape') onDone()
+    }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [onDone])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -131,9 +157,10 @@ export default function SplashScreen({ onDone, version }) {
       await loadNunito()
       if (dead) return
 
-      const { pts, textLeft, textRight, underlineY, underlineT, fontSize } = sampleTextPixels(W, H)
+      const { pts, textLeft, textRight, underlineY, underlineT, fontSize, segBoundaries } =
+        sampleTextPixels(W, H)
       const sampleMemo = { underlineY, fontSize }
-      const letterParts    = buildLetterParticles(W, H, pts)
+      const letterParts    = buildLetterParticles(W, H, pts, segBoundaries)
       const underlineParts = buildUnderlineParticles(textLeft, textRight, underlineY, underlineT)
 
       const s = { phase: 'fly-in', phaseStart: null, lastTs: null }
@@ -156,8 +183,6 @@ export default function SplashScreen({ onDone, version }) {
             underlineParts.forEach(p => { p.blowSx = p.x; p.blowSy = p.y })
           }
           if (next === 'blow-away' || next === 'fade') {
-            // Snapshot letters; also re-snapshot underline from their current
-            // (already off-screen) position so they don't jump back to origin
             letterParts.forEach(p => { p.blowSx = p.x; p.blowSy = p.y })
             underlineParts.forEach(p => { p.blowSx = p.x; p.blowSy = p.y })
           }
@@ -168,7 +193,7 @@ export default function SplashScreen({ onDone, version }) {
 
         if (s.phase === 'fade' && rawT >= 1) { dead = true; onDone(); return }
 
-        // ── Clear — semi-transparent during blow phases for comet trails ──
+        // ── Clear ──────────────────────────────────────────────────────────
         c.save()
         c.scale(dpr, dpr)
         const trailing = s.phase === 'blow-away-line' || s.phase === 'blow-away' || s.phase === 'fade'
@@ -202,7 +227,7 @@ export default function SplashScreen({ onDone, version }) {
           c.beginPath()
           c.arc(p.x, p.y, p.size, 0, Math.PI * 2)
           c.fillStyle   = p.colour
-          c.shadowColor = '#ffffff'
+          c.shadowColor = p.colour
           c.shadowBlur  = 6
           c.fill()
           c.shadowBlur  = 0
@@ -218,7 +243,7 @@ export default function SplashScreen({ onDone, version }) {
           }
           if (s.phase === 'hold') {
             const osc = Math.sin(rawT * Math.PI * 2 * p.freq + p.frac * Math.PI) * p.amp
-            p.x = p.tx + osc * 0.3; p.y = p.ty   // no vertical drift
+            p.x = p.tx + osc * 0.3; p.y = p.ty
           }
           if (s.phase === 'blow-away-line') {
             const e = easeInQuad(rawT)
@@ -226,19 +251,17 @@ export default function SplashScreen({ onDone, version }) {
             p.y = p.blowSy + p.blowVy * e * dur / 1000
           }
           if (s.phase === 'blow-away') {
-            // already off-screen — just keep pushing so trails clear
             p.x = p.blowSx + p.blowVx * rawT * dur / 1000
             p.y = p.blowSy + p.blowVy * rawT * dur / 1000
           }
           if (s.phase === 'fade') { p.x += p.blowVx * dt; p.y += p.blowVy * dt }
 
-          // skip drawing if clearly off-screen
           if (p.x > W + 20 || p.x < -20) return
 
           c.beginPath()
           c.arc(p.x, p.y, p.size, 0, Math.PI * 2)
           c.fillStyle   = p.colour
-          c.shadowColor = '#ffffff'
+          c.shadowColor = p.colour
           c.shadowBlur  = 5
           c.fill()
           c.shadowBlur  = 0
@@ -246,14 +269,12 @@ export default function SplashScreen({ onDone, version }) {
 
         // ── Version subtitle ───────────────────────────────────────────────
         if (version && (s.phase === 'hold' || s.phase === 'blow-away-line')) {
-          // Fade in over first 40% of hold, stay, then fade out over last 30%
           let subtitleAlpha = 0
           if (s.phase === 'hold') {
             if (rawT < 0.4) subtitleAlpha = rawT / 0.4
             else if (rawT < 0.7) subtitleAlpha = 1
             else subtitleAlpha = 1 - (rawT - 0.7) / 0.3
           }
-          // Keep visible (but fading) while line blows away
           if (s.phase === 'blow-away-line') subtitleAlpha = 1 - rawT
 
           if (subtitleAlpha > 0) {
@@ -270,6 +291,19 @@ export default function SplashScreen({ onDone, version }) {
           }
         }
 
+        // ── Escape hint (first 1.5s of fly-in) ────────────────────────────
+        if (s.phase === 'fly-in' && rawT < 0.6) {
+          const hintAlpha = rawT < 0.3 ? rawT / 0.3 : 1 - (rawT - 0.3) / 0.3
+          c.save()
+          c.globalAlpha = hintAlpha * 0.35
+          c.fillStyle = '#94a3b8'
+          c.font = `400 12px monospace`
+          c.textAlign = 'center'
+          c.textBaseline = 'bottom'
+          c.fillText('Press Esc to skip', W / 2, H - 20)
+          c.restore()
+        }
+
         c.restore()
         raf = requestAnimationFrame(animate)
       }
@@ -284,11 +318,13 @@ export default function SplashScreen({ onDone, version }) {
   return (
     <canvas
       ref={canvasRef}
+      onClick={() => {}} // clicking canvas does nothing; use Esc
       style={{
         position: 'fixed', inset: 0,
         width: '100vw', height: '100vh',
         display: 'block', background: '#0a0e1a',
         zIndex: 9999,
+        cursor: 'default',
       }}
     />
   )

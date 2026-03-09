@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 
 /**
- * Global search overlay. Opened via Cmd+K / Ctrl+K.
+ * Global search overlay. Opened via Cmd+F / Ctrl+F.
  *
  * Props:
  *   schema        – full schema array
@@ -142,7 +142,8 @@ export default function SearchOverlay({ schema, mode, onNavigate, onClose }) {
           <span><kbd className="font-mono">↑↓</kbd> navigate</span>
           <span><kbd className="font-mono">↵</kbd> jump to</span>
           <span><kbd className="font-mono">Esc</kbd> close</span>
-          <span className="ml-auto">{results.length} result{results.length !== 1 ? 's' : ''}</span>
+          <span className="ml-auto text-slate-700">⌘F / Ctrl+F</span>
+          <span>{results.length} result{results.length !== 1 ? 's' : ''}</span>
         </div>
       </div>
     </div>
@@ -172,7 +173,6 @@ function buildIndex(schema) {
   const items = []
 
   for (const block of (schema || [])) {
-    // Block entry
     items.push({
       id: `block:${block.name}`,
       kind: 'block',
@@ -185,12 +185,10 @@ function buildIndex(schema) {
       searchText: [block.name, block.label, block.docstring].filter(Boolean).join(' ').toLowerCase(),
     })
 
-    // Option entries (top-level options)
     for (const opt of (block.options || [])) {
       items.push(makeOptEntry(opt, block, null))
     }
 
-    // Sub-block option entries
     for (const sub of (block.sub_blocks || [])) {
       for (const opt of (sub.options || [])) {
         items.push(makeOptEntry(opt, block, sub))
@@ -229,14 +227,12 @@ function fuzzyFilter(index, q) {
     let score = 0
     for (const t of terms) {
       if (!item.searchText.includes(t)) { score = -1; break }
-      // Boost exact prefix matches on primary fields
       if ((item.blockLabel ?? '').toLowerCase().startsWith(t)) score += 10
       else if ((item.optionName ?? '').toLowerCase().startsWith(t)) score += 8
       else if ((item.blockName ?? '').toLowerCase().includes(t)) score += 5
       else if ((item.optionName ?? '').toLowerCase().includes(t)) score += 4
       else score += 1
     }
-    // Blocks rank above options by default
     if (item.kind === 'block') score += 3
     return { item, score }
   })

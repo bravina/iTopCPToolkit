@@ -7,8 +7,11 @@ export default function ModeSelector({ onSelect, appVersion }) {
     <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center gap-10 px-6">
       {/* Title */}
       <div className="text-center">
-        <h1 className="text-4xl font-bold tracking-tight text-slate-100 mb-1">
-          i<span className="text-blue-400">Top</span>CPToolkit
+        <h1 className="text-4xl font-bold tracking-tight mb-1">
+          <span className="text-blue-400">i</span>
+          <span className="text-slate-100">Top</span>
+          <span className="text-blue-400">CP</span>
+          <span className="text-slate-100">Toolkit</span>
         </h1>
         {appVersion && (
           <p className="text-xs text-slate-500 font-mono">v{appVersion}</p>

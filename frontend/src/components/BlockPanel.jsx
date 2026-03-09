@@ -3,6 +3,7 @@ import SubBlockSection from './SubBlockSection.jsx'
 
 export default function BlockPanel({
   blockDef, blockState,
+  depIssues,
   onSetOption, onAddInstance, onRemoveInstance,
   onToggleSubBlock, onSetSubOption, onAddSubInstance, onRemoveSubInstance,
 }) {
@@ -15,7 +16,6 @@ export default function BlockPanel({
   }
 
   const { options = [], sub_blocks = [], repeatable } = blockDef
-  // Names of options on the parent block — sub-blocks won't re-render these
   const parentOptionNames = options.map(o => o.name)
 
   return (
@@ -46,6 +46,7 @@ export default function BlockPanel({
                 option={opt}
                 value={inst.options[opt.name] ?? ''}
                 onChange={val => onSetOption(inst._id, opt.name, val)}
+                blockName={blockDef.name}
               />
             ))}
 
@@ -62,6 +63,7 @@ export default function BlockPanel({
                       subDef={subDef}
                       subState={subState}
                       parentOptionNames={parentOptionNames}
+                      blockName={blockDef.name}
                       onToggle={() => onToggleSubBlock(inst._id, subDef.name)}
                       onSetOption={(subInstId, key, val) =>
                         onSetSubOption(inst._id, subDef.name, subInstId, key, val)}

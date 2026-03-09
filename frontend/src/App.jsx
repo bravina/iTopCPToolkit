@@ -28,6 +28,18 @@ function useIsMobile() {
   return isMobile
 }
 
+// Brand name with consistent blue/white coloring
+export function BrandName({ className = '' }) {
+  return (
+    <span className={className}>
+      <span className="text-blue-400">i</span>
+      <span className="text-slate-100">Top</span>
+      <span className="text-blue-400">CP</span>
+      <span className="text-slate-100">Toolkit</span>
+    </span>
+  )
+}
+
 export default function App() {
   const [showSplash, setShowSplash] = useState(true)
   const [mode, setMode] = useState(null)
@@ -82,10 +94,10 @@ export default function App() {
     [config, registry, schema]
   )
 
-  // Cmd+K / Ctrl+K global shortcut
+  // Cmd+F / Ctrl+F global shortcut — opens search, prevents browser find
   useEffect(() => {
     function handler(e) {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
         e.preventDefault()
         if (mode) setSearchOpen(o => !o)
       }
@@ -101,13 +113,16 @@ export default function App() {
         toggleBlock(blockName)
       }
       if (optionName) {
+        // Use a longer timeout to ensure the panel has rendered after state changes
         setTimeout(() => {
           const cleanOpt = optionName.includes('.') ? optionName.split('.')[1] : optionName
           const el = document.querySelector(`[data-option="${blockName}:${cleanOpt}"]`)
-          el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-          el?.classList.add('search-highlight')
-          setTimeout(() => el?.classList.remove('search-highlight'), 2000)
-        }, 80)
+          if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+            el.classList.add('search-highlight')
+            setTimeout(() => el.classList.remove('search-highlight'), 2000)
+          }
+        }, 150)
       }
     }
   }
@@ -228,8 +243,13 @@ export default function App() {
 
       <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col">
         <header className="h-10 bg-slate-800 border-b border-slate-700 flex items-center px-4 gap-2 shrink-0 overflow-x-auto">
-          <span className="text-sm font-bold text-blue-400 shrink-0">
-            iTopCPToolkit{appVersion ? ` v${appVersion}` : ''}
+          {/* Brand name with blue/white color scheme */}
+          <span className="text-sm font-bold shrink-0">
+            <span className="text-blue-400">i</span>
+            <span className="text-slate-100">Top</span>
+            <span className="text-blue-400">CP</span>
+            <span className="text-slate-100">Toolkit</span>
+            {appVersion && <span className="text-slate-500 font-normal"> v{appVersion}</span>}
           </span>
 
           {athena === false && (
@@ -271,17 +291,17 @@ export default function App() {
 
           {exportMsg && <span className="text-xs text-green-400 shrink-0">{exportMsg}</span>}
 
-          {/* Search button */}
+          {/* Search button — shows Cmd+F / Ctrl+F shortcut */}
           {mode && (
             <button
               type="button"
               onClick={() => setSearchOpen(true)}
               className="text-xs px-2 py-0.5 rounded bg-slate-700/50 hover:bg-slate-600 text-slate-400 hover:text-slate-200 transition-colors shrink-0 flex items-center gap-1.5"
-              title="Search blocks and options (⌘K)"
+              title="Search blocks and options (⌘F / Ctrl+F)"
             >
               <span>⌕</span>
               <span className="hidden md:inline">Search</span>
-              <kbd className="hidden md:inline text-slate-600 font-mono text-xs ml-1">⌘K</kbd>
+              <kbd className="hidden md:inline text-slate-600 font-mono text-xs ml-1">⌘F</kbd>
             </button>
           )}
 

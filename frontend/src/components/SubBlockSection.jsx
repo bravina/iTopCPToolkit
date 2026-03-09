@@ -5,7 +5,7 @@ import OptionField from './OptionField.jsx'
  * Options whose names already appear in the parent block are hidden to avoid repetition.
  */
 export default function SubBlockSection({
-  subDef, subState, parentOptionNames = [],
+  subDef, subState, parentOptionNames = [], blockName,
   onToggle, onSetOption, onAddInstance, onRemoveInstance,
 }) {
   const { label, repeatable, options = [] } = subDef
@@ -60,6 +60,7 @@ export default function SubBlockSection({
                   option={opt}
                   value={si.options[opt.name] ?? ''}
                   onChange={val => onSetOption(si._id, opt.name, val)}
+                  blockName={blockName}
                 />
               ))}
             </div>
