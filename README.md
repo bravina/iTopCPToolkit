@@ -38,8 +38,8 @@ docker build \
   --build-arg TCT_VERSION=latest \
   -t tct-gui .
 
-# Run (overwrites any existing container)
-docker rm -f tct-gui-app 2>/dev/null; docker run --name tct-gui-app -p 5001:5000 tct-gui
+# Run
+docker run --name tct-gui-app -p 5001:5000 tct-gui
 
 # Open http://localhost:5001
 ```
@@ -55,92 +55,48 @@ cd frontend && npm install && npm run dev
 # Open http://localhost:3000
 ```
 
-## Deploying to CERN PaaS (OKD)
+## Deployment
 
 The app is deployed at https://itopcptoolkit.web.cern.ch via [CERN PaaS](https://paas.cern.ch).
 
-### Prerequisites (one-time setup)
+### Automated deployment
 
-**1. Install the `oc` CLI**
-```bash
-brew install openshift-cli   # macOS
-```
+Deployment is fully automated via GitHub Actions. When `VERSION` is updated on `main`:
 
-**2. Log in to the CERN container registry**
+1. **`release.yml`** creates a new GitHub release tagged with the contents of `VERSION`.
+2. **`deploy.yml`** builds the Docker image and pushes it to `registry.cern.ch/itopcptoolkit/itopcptoolkit:latest`.
+3. **OKD** detects the new image via its image change trigger and automatically redeploys.
 
-Get your CLI secret from https://registry.cern.ch (User Profile → CLI secret), then:
-```bash
-docker login registry.cern.ch -u ravinab -p <CLI-secret>
-```
+To release a new version, simply update the `VERSION` file and push to `main`.
 
-**3. Log in to OKD**
+### Required GitHub secrets and variables
+
+| Name | Type | Description |
+|---|---|---|
+| `CERN_REGISTRY_USER` | Secret | Harbor registry username |
+| `CERN_REGISTRY_TOKEN` | Secret | Harbor CLI secret (from registry.cern.ch → User Profile) |
+| `CERN_TOKEN` | Secret | CERN GitLab PAT (only needed for TopCPToolkit builds) |
+| `AB_TAG` | Variable | AnalysisBase tag (e.g. `25.2.86`), optional |
+| `TCT_VERSION` | Variable | TopCPToolkit version (e.g. `v2.24.0`), optional |
+
+### One-time OKD setup
+
+The OKD deployment was set up via the CERN PaaS UI (**+Add → Container images**) pointing at `registry.cern.ch/itopcptoolkit/itopcptoolkit:latest`, with the image change trigger enabled so new pushes are picked up automatically.
+
+To check the deployment:
+
 ```bash
 oc login --web https://api.paas.okd.cern.ch
 oc project itopcptoolkit
-```
-
-**4. Create the image pull secret** (allows OKD to pull from `registry.cern.ch`)
-```bash
-oc create secret docker-registry registry-cern \
-  --docker-server=registry.cern.ch \
-  --docker-username=ravinab \
-  --docker-password=<CLI-secret>
-oc secrets link default registry-cern --for=pull
-```
-
-**5. Apply the OKD manifests** (first deployment only)
-```bash
-oc apply -f okd/deployment.yaml
-oc apply -f okd/service.yaml
-oc apply -f okd/route.yaml
-```
-
-### Deploying a new version
-
-Once the one-time setup is done, deploying a new version is:
-
-```bash
-# 1. Build the new image
-docker build --build-arg AB_TAG=25.2.86 -t tct-gui .
-# (add --secret and --build-arg TCT_VERSION=... for TopCPToolkit)
-
-# 2. Tag and push to the CERN registry
-docker tag tct-gui registry.cern.ch/itopcptoolkit/itopcptoolkit:latest
-docker push registry.cern.ch/itopcptoolkit/itopcptoolkit:latest
-
-# 3. Trigger a rollout on OKD (pulls the new image)
-oc rollout restart deployment/itopcptoolkit
-
-# 4. Watch the rollout
-oc rollout status deployment/itopcptoolkit
-```
-
-Or use the convenience script which does all of the above:
-```bash
-export CERN_TOKEN=glpat-xxxxxxxxxxxx   # only needed if building with TCT
-./deploy.sh                # no TCT
-./deploy.sh latest         # TCT from main
-./deploy.sh v2.24.0        # specific TCT tag
-```
-
-### Checking the deployment
-
-```bash
-# Pod status
 oc get pods
-
-# App logs
 oc logs deployment/itopcptoolkit --follow
-
-# Current route / URL
-oc get route itopcptoolkit
 ```
 
 ## Usage
 
 1. **Enable blocks** using the toggles in the left sidebar.
 2. **Click a block name** to open its configuration panel.
-3. **Fill in options** — each field shows the type, default value, and a help bubble with the full docstring (supports Markdown and LaTeX).
+3. **Fill in options** — each field shows the type, default value, and a help string with the full docstring.
 4. **Enable sub-blocks** (e.g. JVT, WorkingPoint, FlavourTagging) inside each block's panel.
 5. **For repeatable blocks** (marked `[]`), use "+ Add instance" to configure multiple jet collections, working points, etc.
 6. **Watch the live YAML** update in the right panel as you configure.
