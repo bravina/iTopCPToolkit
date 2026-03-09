@@ -15,18 +15,10 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install oc CLI
-        run: |
-          curl -LO https://mirror.openshift.com/pub/openshift-v4/clients/oc/latest/linux/oc.tar.gz
-          tar -xf oc.tar.gz
-          sudo mv oc /usr/local/bin/
-
-      - name: Docker login to CERN registry
-        run: |
-          echo "${{ secrets.CERN_REGISTRY_TOKEN }}" | \
-            docker login registry.cern.ch \
-              -u "${{ secrets.CERN_REGISTRY_USER }}" \
-              --password-stdin
-
+        uses: redhat-actions/openshift-tools-installer@v1
+        with:
+          oc: latest
+ 
       - name: OC login
         run: |
           oc login --server=https://api.paas.okd.cern.ch \
