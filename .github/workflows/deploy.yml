@@ -24,15 +24,23 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Prepare build args
+        id: buildargs
+        run: |
+          ARGS=""
+          [ -n "${{ vars.AB_TAG }}" ] && ARGS="${ARGS}AB_TAG=${{ vars.AB_TAG }}\n"
+          [ -n "${{ vars.TCT_VERSION }}" ] && ARGS="${ARGS}TCT_VERSION=${{ vars.TCT_VERSION }}\n"
+          echo "args<<EOF" >> $GITHUB_OUTPUT
+          printf "$ARGS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
           tags: registry.cern.ch/itopcptoolkit/itopcptoolkit:latest
-          build-args: |
-            AB_TAG=${{ vars.AB_TAG }}
-            TCT_VERSION=${{ vars.TCT_VERSION }}
+          build-args: ${{ steps.buildargs.outputs.args }}
           secrets: |
             cern_token=${{ secrets.CERN_TOKEN }}
           cache-from: type=registry,ref=registry.cern.ch/itopcptoolkit/itopcptoolkit:buildcache
