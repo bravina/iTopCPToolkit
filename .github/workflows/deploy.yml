@@ -1,0 +1,43 @@
+name: Build and push Docker image
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'VERSION'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Docker login to CERN registry
+        run: |
+          echo "${{ secrets.CERN_REGISTRY_TOKEN }}" | \
+            docker login registry.cern.ch \
+              -u "${{ secrets.CERN_REGISTRY_USER }}" \
+              --password-stdin
+
+      - name: Build and push
+        env:
+          DOCKER_BUILDKIT: "1"
+          CERN_TOKEN: ${{ secrets.CERN_TOKEN }}
+          AB_TAG: ${{ vars.AB_TAG }}
+          TCT_VERSION: ${{ vars.TCT_VERSION }}
+        run: |
+          IMAGE="registry.cern.ch/itopcptoolkit/itopcptoolkit:latest"
+          BUILD_ARGS=""
+
+          [ -n "${AB_TAG}" ] && BUILD_ARGS="${BUILD_ARGS} --build-arg AB_TAG=${AB_TAG}"
+          [ -n "${TCT_VERSION}" ] && BUILD_ARGS="${BUILD_ARGS} --build-arg TCT_VERSION=${TCT_VERSION}"
+
+          if [ -n "${CERN_TOKEN}" ] && [ -n "${TCT_VERSION}" ]; then
+            docker build ${BUILD_ARGS} --secret id=cern_token,env=CERN_TOKEN -t "${IMAGE}" .
+          else
+            docker build ${BUILD_ARGS} -t "${IMAGE}" .
+          fi
+
+          docker push "${IMAGE}"
