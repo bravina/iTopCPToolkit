@@ -22,9 +22,10 @@ jobs:
 
       - name: Docker login to CERN registry
         run: |
-          docker login registry.cern.ch \
-          -u "${{ secrets.CERN_REGISTRY_USER }}" \
-          -p "${{ secrets.CERN_REGISTRY_TOKEN }}"
+          echo "${{ secrets.CERN_REGISTRY_TOKEN }}" | \
+            docker login \
+              -u "${{ secrets.CERN_REGISTRY_USER }}" \
+              --password-stdin
 
       - name: OC login
         run: |
