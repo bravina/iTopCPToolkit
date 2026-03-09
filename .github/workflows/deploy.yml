@@ -1,0 +1,36 @@
+name: Build and deploy
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install oc CLI
+        run: |
+          curl -LO https://mirror.openshift.com/pub/openshift-v4/clients/oc/latest/linux/oc.tar.gz
+          tar -xf oc.tar.gz
+          sudo mv oc /usr/local/bin/
+
+      - name: Docker login to CERN registry
+        run: |
+          echo "${{ secrets.CERN_REGISTRY_TOKEN }}" | \
+            docker login registry.cern.ch \
+              -u "${{ secrets.CERN_REGISTRY_USER }}" \
+              --password-stdin
+
+      - name: OC login
+        run: |
+          oc login --server=https://api.paas.okd.cern.ch \
+            --token="${{ secrets.OC_TOKEN }}"
+
+      - name: Deploy
+        env:
+          CERN_TOKEN: ${{ secrets.CERN_TOKEN }}
+          DOCKER_BUILDKIT: "1"        # required for --secret in docker build
+        run: bash deploy.sh v2.24.0
