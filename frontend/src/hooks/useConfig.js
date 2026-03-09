@@ -35,6 +35,11 @@ function reducer(state, action) {
     case 'INIT':
       return initialState(action.schema)
 
+    // ── NEW: load full state from a parsed YAML config (round-trip from Reader)
+    case 'LOAD_FROM_YAML': {
+      return action.state
+    }
+
     case 'TOGGLE_BLOCK': {
       const { name } = action
       return { ...state, [name]: { ...state[name], enabled: !state[name].enabled } }
@@ -171,6 +176,7 @@ export function useConfig() {
   const [config, dispatch] = useReducer(reducer, {})
 
   const init = useCallback((schema) => dispatch({ type: 'INIT', schema }), [])
+  const loadFromYaml = useCallback((state) => dispatch({ type: 'LOAD_FROM_YAML', state }), [])
   const toggleBlock = useCallback((name) => dispatch({ type: 'TOGGLE_BLOCK', name }), [])
   const setOption = useCallback((blockName, instanceId, key, value) =>
     dispatch({ type: 'SET_OPTION', blockName, instanceId, key, value }), [])
@@ -190,6 +196,7 @@ export function useConfig() {
   return {
     config,
     init,
+    loadFromYaml,
     toggleBlock,
     setOption,
     addInstance,

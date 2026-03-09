@@ -5,8 +5,11 @@ import YamlPreview from './components/YamlPreview.jsx'
 import ResizablePanels from './components/ResizablePanels.jsx'
 import MobileLayout from './components/MobileLayout.jsx'
 import SplashScreen from './components/SplashScreen.jsx'
+import ModeSelector from './components/ModeSelector.jsx'
+import ConfigReader from './components/ConfigReader.jsx'
 import { useConfig } from './hooks/useConfig.js'
 import { buildYamlObject, toYamlString } from './utils/yamlSerializer.js'
+import { yamlToConfig } from './utils/yamlToConfig.js'
 
 const API = import.meta.env.VITE_API_URL || ''
 
@@ -23,6 +26,7 @@ function useIsMobile() {
 
 export default function App() {
   const [showSplash, setShowSplash] = useState(true)
+  const [mode, setMode] = useState(null)           // null | 'builder' | 'reader'
   const [schema, setSchema] = useState([])
   const [selected, setSelected] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -35,7 +39,7 @@ export default function App() {
   const isMobile = useIsMobile()
 
   const {
-    config, init,
+    config, init, loadFromYaml,
     toggleBlock, setOption, addInstance, removeInstance,
     toggleSubBlock, setSubOption, addSubInstance, removeSubInstance,
   } = useConfig()
@@ -78,6 +82,14 @@ export default function App() {
     setTimeout(() => setExportMsg(null), 4000)
   }
 
+  // Round-trip: Reader → Builder
+  function handleOpenInBuilder(configObj) {
+    const builderState = yamlToConfig(configObj, schema)
+    loadFromYaml(builderState)
+    setMode('builder')
+    setSelected(Object.keys(configObj)[0] ?? schema[0]?.name ?? null)
+  }
+
   const selectedDef = schema.find(b => b.name === selected)
   const selectedState = config[selected]
 
@@ -102,7 +114,7 @@ export default function App() {
     </div>
   )
 
-  // ── Shared panel content ───────────────────────────────────────────────────
+  // ── Shared panel content (builder mode) ───────────────────────────────────
 
   const sidebarPanel = (
     <Sidebar
@@ -152,7 +164,12 @@ export default function App() {
 
   return (
     <>
-      {showSplash && <SplashScreen onDone={() => setShowSplash(false)} version={appVersion} />}
+      {showSplash && (
+        <SplashScreen
+          onDone={() => setShowSplash(false)}
+          version={appVersion}
+        />
+      )}
 
       <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col">
         {/* Top bar */}
@@ -201,21 +218,55 @@ export default function App() {
           {exportMsg && (
             <span className="text-xs text-green-400 shrink-0">{exportMsg}</span>
           )}
+
+          {/* Mode switcher */}
+          {mode && (
+            <div className="ml-auto flex items-center gap-1 shrink-0">
+              <button
+                type="button"
+                onClick={() => setMode('builder')}
+                className={`text-xs px-2 py-0.5 rounded transition-colors ${mode === 'builder' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700'}`}
+              >
+                ⚙ Builder
+              </button>
+              <button
+                type="button"
+                onClick={() => setMode('reader')}
+                className={`text-xs px-2 py-0.5 rounded transition-colors ${mode === 'reader' ? 'bg-emerald-700 text-white' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700'}`}
+              >
+                ◎ Reader
+              </button>
+            </div>
+          )}
         </header>
 
-        {/* Main layout: responsive */}
-        {isMobile ? (
-          <MobileLayout
-            sidebar={sidebarPanel}
-            editor={editorPanel}
-            preview={previewPanel}
-          />
-        ) : (
-          <ResizablePanels initialSizes={[18, 52, 30]}>
-            {sidebarPanel}
-            {editorPanel}
-            {previewPanel}
-          </ResizablePanels>
+        {/* Mode selector (after splash, before a mode is chosen) */}
+        {!showSplash && mode === null && (
+          <ModeSelector onSelect={setMode} appVersion={appVersion} />
+        )}
+
+        {/* Builder mode */}
+        {mode === 'builder' && (
+          isMobile ? (
+            <MobileLayout
+              sidebar={sidebarPanel}
+              editor={editorPanel}
+              preview={previewPanel}
+            />
+          ) : (
+            <ResizablePanels initialSizes={[18, 52, 30]}>
+              {sidebarPanel}
+              {editorPanel}
+              {previewPanel}
+            </ResizablePanels>
+          )
+        )}
+
+        {/* Reader mode */}
+        {mode === 'reader' && (
+          <div className="flex flex-1 overflow-hidden">
+            <ConfigReader schema={schema} onOpenInBuilder={handleOpenInBuilder} />
+          </div>
         )}
       </div>
     </>
