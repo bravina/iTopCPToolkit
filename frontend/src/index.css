@@ -4,3 +4,12 @@
 
 /* Monospace YAML preview */
 .yaml-preview { font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace; }
+
+/* Search highlight pulse (Cmd+K navigation) */
+[data-option].search-highlight {
+  animation: highlight-pulse 2s ease-out;
+}
+@keyframes highlight-pulse {
+  0%   { background-color: rgba(234, 179, 8, 0.25); }
+  100% { background-color: transparent; }
+}

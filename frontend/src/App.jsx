@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import Sidebar from './components/Sidebar.jsx'
 import BlockPanel from './components/BlockPanel.jsx'
 import YamlPreview from './components/YamlPreview.jsx'
@@ -7,9 +7,13 @@ import MobileLayout from './components/MobileLayout.jsx'
 import SplashScreen from './components/SplashScreen.jsx'
 import ModeSelector from './components/ModeSelector.jsx'
 import ConfigReader from './components/ConfigReader.jsx'
+import SearchOverlay from './components/SearchOverlay.jsx'
 import { useConfig } from './hooks/useConfig.js'
-import { buildYamlObject, toYamlString } from './utils/yamlSerializer.js'
+import { toYamlString } from './utils/yamlSerializer.js'
 import { yamlToConfig } from './utils/yamlToConfig.js'
+import { buildRegistryFromState } from './utils/collectionRegistry.js'
+import { checkDepsFromState } from './utils/dependencyChecker.js'
+import { RegistryProvider } from './contexts/RegistryContext.js'
 
 const API = import.meta.env.VITE_API_URL || ''
 
@@ -26,7 +30,7 @@ function useIsMobile() {
 
 export default function App() {
   const [showSplash, setShowSplash] = useState(true)
-  const [mode, setMode] = useState(null)           // null | 'builder' | 'reader'
+  const [mode, setMode] = useState(null)
   const [schema, setSchema] = useState([])
   const [selected, setSelected] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -36,6 +40,7 @@ export default function App() {
   const [abVersion, setAbVersion] = useState(null)
   const [tctVersion, setTctVersion] = useState(undefined)
   const [athena, setAthena] = useState(null)
+  const [searchOpen, setSearchOpen] = useState(false)
   const isMobile = useIsMobile()
 
   const {
@@ -65,6 +70,48 @@ export default function App() {
       })
   }, [])
 
+  // Registry derived from builder config state
+  const registry = useMemo(
+    () => buildRegistryFromState(config, schema),
+    [config, schema]
+  )
+
+  // Dependency issues for builder mode
+  const depIssues = useMemo(
+    () => checkDepsFromState(config, registry, schema),
+    [config, registry, schema]
+  )
+
+  // Cmd+K / Ctrl+K global shortcut
+  useEffect(() => {
+    function handler(e) {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault()
+        if (mode) setSearchOpen(o => !o)
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [mode])
+
+  function handleSearchNavigate({ blockName, optionName }) {
+    if (mode === 'builder') {
+      setSelected(blockName)
+      if (config[blockName] && !config[blockName].enabled) {
+        toggleBlock(blockName)
+      }
+      if (optionName) {
+        setTimeout(() => {
+          const cleanOpt = optionName.includes('.') ? optionName.split('.')[1] : optionName
+          const el = document.querySelector(`[data-option="${blockName}:${cleanOpt}"]`)
+          el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          el?.classList.add('search-highlight')
+          setTimeout(() => el?.classList.remove('search-highlight'), 2000)
+        }, 80)
+      }
+    }
+  }
+
   async function handleExport(filename) {
     try {
       const yamlText = toYamlString(config, schema)
@@ -82,7 +129,6 @@ export default function App() {
     setTimeout(() => setExportMsg(null), 4000)
   }
 
-  // Round-trip: Reader → Builder
   function handleOpenInBuilder(configObj) {
     const builderState = yamlToConfig(configObj, schema)
     loadFromYaml(builderState)
@@ -114,8 +160,6 @@ export default function App() {
     </div>
   )
 
-  // ── Shared panel content (builder mode) ───────────────────────────────────
-
   const sidebarPanel = (
     <Sidebar
       schema={schema}
@@ -124,6 +168,7 @@ export default function App() {
       onSelect={setSelected}
       onToggle={toggleBlock}
       docsUrl={docsUrl}
+      depIssues={depIssues}
     />
   )
 
@@ -138,6 +183,7 @@ export default function App() {
           <BlockPanel
             blockDef={selectedDef}
             blockState={selectedState}
+            depIssues={depIssues.filter(i => i.path.startsWith(selectedDef.name))}
             onSetOption={(instId, key, val) => setOption(selectedDef.name, instId, key, val)}
             onAddInstance={() => addInstance(selectedDef.name, selectedDef)}
             onRemoveInstance={(instId) => removeInstance(selectedDef.name, instId)}
@@ -163,7 +209,16 @@ export default function App() {
   )
 
   return (
-    <>
+    <RegistryProvider value={registry}>
+      {searchOpen && (
+        <SearchOverlay
+          schema={schema}
+          mode={mode}
+          onNavigate={handleSearchNavigate}
+          onClose={() => setSearchOpen(false)}
+        />
+      )}
+
       {showSplash && (
         <SplashScreen
           onDone={() => setShowSplash(false)}
@@ -172,7 +227,6 @@ export default function App() {
       )}
 
       <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col">
-        {/* Top bar */}
         <header className="h-10 bg-slate-800 border-b border-slate-700 flex items-center px-4 gap-2 shrink-0 overflow-x-auto">
           <span className="text-sm font-bold text-blue-400 shrink-0">
             iTopCPToolkit{appVersion ? ` v${appVersion}` : ''}
@@ -215,8 +269,20 @@ export default function App() {
             <span className="sm:hidden">📖 Docs</span>
           </a>
 
-          {exportMsg && (
-            <span className="text-xs text-green-400 shrink-0">{exportMsg}</span>
+          {exportMsg && <span className="text-xs text-green-400 shrink-0">{exportMsg}</span>}
+
+          {/* Search button */}
+          {mode && (
+            <button
+              type="button"
+              onClick={() => setSearchOpen(true)}
+              className="text-xs px-2 py-0.5 rounded bg-slate-700/50 hover:bg-slate-600 text-slate-400 hover:text-slate-200 transition-colors shrink-0 flex items-center gap-1.5"
+              title="Search blocks and options (⌘K)"
+            >
+              <span>⌕</span>
+              <span className="hidden md:inline">Search</span>
+              <kbd className="hidden md:inline text-slate-600 font-mono text-xs ml-1">⌘K</kbd>
+            </button>
           )}
 
           {/* Mode switcher */}
@@ -234,25 +300,19 @@ export default function App() {
                 onClick={() => setMode('reader')}
                 className={`text-xs px-2 py-0.5 rounded transition-colors ${mode === 'reader' ? 'bg-emerald-700 text-white' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700'}`}
               >
-                ◎ Reader
+                ◉ Reader
               </button>
             </div>
           )}
         </header>
 
-        {/* Mode selector (after splash, before a mode is chosen) */}
         {!showSplash && mode === null && (
           <ModeSelector onSelect={setMode} appVersion={appVersion} />
         )}
 
-        {/* Builder mode */}
         {mode === 'builder' && (
           isMobile ? (
-            <MobileLayout
-              sidebar={sidebarPanel}
-              editor={editorPanel}
-              preview={previewPanel}
-            />
+            <MobileLayout sidebar={sidebarPanel} editor={editorPanel} preview={previewPanel} />
           ) : (
             <ResizablePanels initialSizes={[18, 52, 30]}>
               {sidebarPanel}
@@ -262,13 +322,16 @@ export default function App() {
           )
         )}
 
-        {/* Reader mode */}
         {mode === 'reader' && (
           <div className="flex flex-1 overflow-hidden">
-            <ConfigReader schema={schema} onOpenInBuilder={handleOpenInBuilder} />
+            <ConfigReader
+              schema={schema}
+              onOpenInBuilder={handleOpenInBuilder}
+              onOpenSearch={() => setSearchOpen(true)}
+            />
           </div>
         )}
       </div>
-    </>
+    </RegistryProvider>
   )
 }
