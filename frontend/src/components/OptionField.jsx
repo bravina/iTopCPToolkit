@@ -31,26 +31,29 @@ function displayValue(value, type) {
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
-function BoolField({ value, onChange }) {
+function BoolField({ value, onChange, defaultValue }) {
+  const effective = (value === true || value === false) ? value : defaultValue
+  const isOn = effective === true
   return (
-    <div className="flex items-center gap-3 mt-1">
-      {[true, false].map(bool => (
-        <label key={String(bool)} className="flex items-center gap-1.5 cursor-pointer">
-          <input
-            type="radio"
-            name={`bool-${Math.random()}`}
-            checked={value === bool}
-            onChange={() => onChange(bool)}
-            className="accent-blue-500"
-          />
-          <span className={`text-xs ${value === bool ? 'text-slate-100' : 'text-slate-400'}`}>
-            {String(bool)}
-          </span>
-        </label>
-      ))}
-      {value !== true && value !== false && (
-        <span className="text-xs text-slate-600 italic">not set</span>
-      )}
+    <div className="flex items-center gap-2 mt-1">
+      <button
+        type="button"
+        role="switch"
+        aria-checked={isOn}
+        onClick={() => onChange(!isOn)}
+        className={`relative inline-flex w-9 h-5 rounded-full transition-colors duration-200 focus:outline-none ${
+          isOn ? 'bg-blue-500' : 'bg-slate-600'
+        }`}
+      >
+        <span
+          className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200 ${
+            isOn ? 'translate-x-4' : 'translate-x-0'
+          }`}
+        />
+      </button>
+      <span className={`text-xs ${isOn ? 'text-slate-100' : 'text-slate-400'}`}>
+        {String(isOn)}
+      </span>
     </div>
   )
 }
@@ -150,7 +153,7 @@ export default function OptionField({ option: opt, value, onChange, blockName, d
     const type = opt.type
 
     if (type === 'bool') {
-      return <BoolField value={value} onChange={onChange} />
+      return <BoolField value={value} onChange={onChange} defaultValue={opt.default} />
     }
     if (type === 'int' || type === 'float') {
       return <NumberField opt={opt} value={value} onChange={onChange} />
