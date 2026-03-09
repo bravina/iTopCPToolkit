@@ -3,7 +3,7 @@
 
 # ARG before the first FROM so it is usable in both FROM lines
 ARG AB_TAG=25.2.86
-ARG TCT_VERSION=2.24.0
+ARG TCT_VERSION=v2.24.0
 
 # ── Stage 1: build the React frontend ────────────────────────────────────────
 FROM --platform=linux/amd64 node:20-slim AS frontend-build
