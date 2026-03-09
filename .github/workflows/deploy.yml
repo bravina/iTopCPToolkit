@@ -22,7 +22,8 @@ jobs:
       - name: OC login
         run: |
           oc login --server=https://api.paas.okd.cern.ch \
-            --token="${{ secrets.OC_TOKEN }}"
+            --token="${{ secrets.OC_TOKEN }}" \
+            --insecure-skip-tls-verify
 
       - name: Deploy
         env:
