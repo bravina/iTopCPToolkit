@@ -21,19 +21,19 @@ jobs:
               -u "${{ secrets.CERN_REGISTRY_USER }}" \
               --password-stdin
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Build and push
-        env:
-          DOCKER_BUILDKIT: "1"
-          CERN_TOKEN: ${{ secrets.CERN_TOKEN }}
-          AB_TAG: ${{ vars.AB_TAG }}
-          TCT_VERSION: ${{ vars.TCT_VERSION }}
-        run: |
-          IMAGE="registry.cern.ch/itopcptoolkit/itopcptoolkit:latest"
-          BUILD_ARGS=""
-
-          [ -n "${AB_TAG}" ] && BUILD_ARGS="${BUILD_ARGS} --build-arg AB_TAG=${AB_TAG}"
-          [ -n "${TCT_VERSION}" ] && BUILD_ARGS="${BUILD_ARGS} --build-arg TCT_VERSION=${TCT_VERSION}"
-
-          docker build ${BUILD_ARGS} --secret id=cern_token,env=CERN_TOKEN -t "${IMAGE}" .
-
-          docker push "${IMAGE}"
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: registry.cern.ch/itopcptoolkit/itopcptoolkit:latest
+          build-args: |
+            AB_TAG=${{ vars.AB_TAG }}
+            TCT_VERSION=${{ vars.TCT_VERSION }}
+          secrets: |
+            cern_token=${{ secrets.CERN_TOKEN }}
+          cache-from: type=registry,ref=registry.cern.ch/itopcptoolkit/itopcptoolkit:buildcache
+          cache-to: type=registry,ref=registry.cern.ch/itopcptoolkit/itopcptoolkit:buildcache,mode=max
