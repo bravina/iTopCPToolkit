@@ -151,6 +151,19 @@ export default function App() {
     setSelected(Object.keys(configObj)[0] ?? schema[0]?.name ?? null)
   }
 
+  // Pill click: toggle; if turning ON, also navigate to that block
+  function handleSidebarToggle(name) {
+    const wasEnabled = config[name]?.enabled
+    toggleBlock(name)
+    if (!wasEnabled) setSelected(name)
+  }
+
+  // Name click: always navigate; if block was OFF, also enable it
+  function handleSidebarSelect(name) {
+    if (!config[name]?.enabled) toggleBlock(name)
+    setSelected(name)
+  }
+
   const selectedDef = schema.find(b => b.name === selected)
   const selectedState = config[selected]
 
@@ -180,8 +193,8 @@ export default function App() {
       schema={schema}
       config={config}
       selected={selected}
-      onSelect={setSelected}
-      onToggle={toggleBlock}
+      onSelect={handleSidebarSelect}
+      onToggle={handleSidebarToggle}
       docsUrl={docsUrl}
       depIssues={depIssues}
     />
