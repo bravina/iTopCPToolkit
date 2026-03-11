@@ -61,13 +61,47 @@ RUN --mount=type=secret,id=cern_token \
         && mkdir -p /opt/TopCPToolkit/build \
         && cd /opt/TopCPToolkit/build \
         && cmake /tmp/TopCPToolkit-src/source \
-        && make -j$(nproc) \
-        && rm -rf /tmp/TopCPToolkit-src ; \
+        && make -j$(nproc) ; \
+    fi
+
+# ── Generate documentation for RAG ──────────────────────────────────────────
+RUN source /home/atlas/release_setup.sh \
+ && TCT_SETUP=$(ls /opt/TopCPToolkit/build/*/setup.sh 2>/dev/null | head -1) \
+ && if [ -n "$TCT_SETUP" ]; then source "$TCT_SETUP"; fi \
+ # Install the EXACT requirements provided
+ && python3 -m pip install --quiet \
+    "mkdocs==1.6.1" \
+    "mkdocs-macros-plugin==1.3.7" \
+    "mkdocs-material==9.6.14" \
+    "mkdocs-static-i18n==1.3.0" \
+    "mkdocs-glightbox==0.4.0" \
+    "mkdocs-exclude==1.0.2" \
+    "mike==2.1.3" \
+ && if [ -d "/tmp/TopCPToolkit-src/docs" ]; then \
+        echo "Generating auto-documentation..." ; \
+        export PYTHONPATH=$PYTHONPATH:/tmp/TopCPToolkit-src/source \
+        && cd /tmp/TopCPToolkit-src/docs/auto_settings/ \
+        && python3 autogen_script.py \
+        && cd /tmp/TopCPToolkit-src \
+        # Build the site - the i18n plugin handles the language subdirectories
+        && mkdocs build --clean --site-dir /opt/tct-docs-site ; \
+    else \
+        echo "ERROR: No TopCPToolkit docs directory found!" && exit 1 ; \
     fi
 
 # Copy backend
 COPY backend/ /app/backend/
 COPY VERSION /app/VERSION
+
+# Run the doc chunker AND verify output
+RUN source /home/atlas/release_setup.sh \
+ && python3 /app/backend/chunk_docs.py /opt/tct-docs-site /app/backend/docs_index.json \
+ && if [ ! -s /app/backend/docs_index.json ] || [ "$(cat /app/backend/docs_index.json)" = "[]" ]; then \
+        echo "ERROR: RAG index is empty!" && exit 1; \
+    fi
+
+# Clean up the full docs site (we only need the JSON index)
+RUN rm -rf /opt/tct-docs-site /tmp/TopCPToolkit-src
 
 # Copy built frontend
 COPY --from=frontend-build /app/frontend/dist /app/frontend/dist

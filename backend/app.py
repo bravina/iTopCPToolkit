@@ -6,6 +6,8 @@ Endpoints
 GET  /api/schema           Full block tree with introspected options
 GET  /api/health           Liveness check; reports Athena + version info
 POST /api/export-yaml      Returns YAML content as a downloadable response
+POST /api/chat             Proxy chat requests to AI providers (with RAG)
+GET  /api/rag-stats        RAG index statistics
 """
 
 import copy
@@ -24,11 +26,15 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("app")
 
 _version_file = os.path.join(os.path.dirname(__file__), "..", "VERSION")
-APP_VERSION = open(_version_file).read().strip()
+APP_VERSION = open(_version_file).read().strip() if os.path.exists(_version_file) else "dev"
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
 app = Flask(__name__, static_folder=STATIC_DIR if os.path.isdir(STATIC_DIR) else None)
 CORS(app)
+
+# Register chat proxy blueprint
+from chat_proxy import chat_bp
+app.register_blueprint(chat_bp)
 
 _schema_cache = None
 
@@ -80,12 +86,17 @@ def health():
         athena_ok = True
     except ImportError:
         athena_ok = False
+
+    from rag import get_stats
+    rag = get_stats()
+
     return jsonify({
         "status": "ok",
         "athena": athena_ok,
         "app_version": APP_VERSION,
         "ab_version": _get_ab_version(),
         "tct_version": _get_tct_version(),
+        "rag_chunks": rag["total_chunks"],
     })
 
 

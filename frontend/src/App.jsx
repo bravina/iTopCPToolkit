@@ -8,6 +8,8 @@ import SplashScreen from './components/SplashScreen.jsx'
 import ModeSelector from './components/ModeSelector.jsx'
 import ConfigReader from './components/ConfigReader.jsx'
 import SearchOverlay from './components/SearchOverlay.jsx'
+import AiConfigModal from './components/AiConfigModal.jsx'
+import AiChatPanel from './components/AiChatPanel.jsx'
 import { useConfig } from './hooks/useConfig.js'
 import { toYamlString } from './utils/yamlSerializer.js'
 import { yamlToConfig } from './utils/yamlToConfig.js'
@@ -53,7 +55,12 @@ export default function App() {
   const [tctVersion, setTctVersion] = useState(undefined)
   const [athena, setAthena] = useState(null)
   const [searchOpen, setSearchOpen] = useState(false)
+  const [ragChunks, setRagChunks] = useState(0)
   const isMobile = useIsMobile()
+
+  // AI chat state
+  const [aiConfig, setAiConfig] = useState(null)       // { provider, providerName, model, apiKey }
+  const [showAiModal, setShowAiModal] = useState(false)
 
   const {
     config, init, loadFromYaml,
@@ -72,6 +79,7 @@ export default function App() {
         setAppVersion(health.app_version)
         setAbVersion(health.ab_version)
         setTctVersion(health.tct_version ?? null)
+        setRagChunks(health.rag_chunks ?? 0)
         init(schemaData)
         setSelected(schemaData[0]?.name ?? null)
         setLoading(false)
@@ -233,7 +241,21 @@ export default function App() {
   )
 
   const previewPanel = (
-    <YamlPreview config={config} schema={schema} onExport={handleExport} />
+    <div className="flex flex-col h-full overflow-hidden">
+      <div className={aiConfig ? 'flex-1 min-h-0 overflow-hidden' : 'h-full overflow-hidden'}>
+        <YamlPreview config={config} schema={schema} onExport={handleExport} />
+      </div>
+      {aiConfig && (
+        <div className="h-[45%] min-h-[200px] border-t border-slate-700 overflow-hidden">
+          <AiChatPanel
+            aiConfig={aiConfig}
+            config={config}
+            schema={schema}
+            onDisconnect={() => setAiConfig(null)}
+          />
+        </div>
+      )}
+    </div>
   )
 
   return (
@@ -244,6 +266,14 @@ export default function App() {
           mode={mode}
           onNavigate={handleSearchNavigate}
           onClose={() => setSearchOpen(false)}
+        />
+      )}
+
+      {showAiModal && (
+        <AiConfigModal
+          currentConfig={aiConfig}
+          onConnect={(cfg) => { setAiConfig(cfg); setShowAiModal(false) }}
+          onClose={() => setShowAiModal(false)}
         />
       )}
 
@@ -301,6 +331,26 @@ export default function App() {
             <span className="hidden sm:inline">📖 TopCPToolkit docs</span>
             <span className="sm:hidden">📖 Docs</span>
           </a>
+
+          {/* ── Ask an AI! badge ── */}
+          <button
+            type="button"
+            onClick={() => setShowAiModal(true)}
+            className={`text-xs px-2 py-0.5 rounded transition-colors shrink-0 flex items-center gap-1.5 ${
+              aiConfig
+                ? 'bg-purple-800/50 text-purple-300 hover:bg-purple-700/50'
+                : 'bg-purple-700/60 text-purple-200 hover:bg-purple-600/60'
+            }`}
+            title={aiConfig ? `Connected to ${aiConfig.providerName} (${aiConfig.model})` : 'Connect an AI chatbot for help'}
+          >
+            <span>🤖</span>
+            <span className="hidden sm:inline">
+              {aiConfig ? aiConfig.providerName : 'Ask an AI!'}
+            </span>
+            <span className="sm:hidden">
+              {aiConfig ? '🤖' : 'AI'}
+            </span>
+          </button>
 
           {exportMsg && <span className="text-xs text-green-400 shrink-0">{exportMsg}</span>}
 
