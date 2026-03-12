@@ -3,15 +3,21 @@ TopCPToolkit GUI – Flask backend.
 
 Endpoints
 ---------
-GET  /api/schema           Full block tree with introspected options
-GET  /api/health           Liveness check; reports Athena + version info
-POST /api/export-yaml      Returns YAML content as a downloadable response
+GET  /api/schema              Full block tree with introspected options
+GET  /api/health              Liveness check; reports Athena + version info
+POST /api/export-yaml         Returns YAML content as a downloadable response
+POST /api/generate-intnote    Runs generateConfigInformation.py on a JSON file,
+                              compiles the resulting .tex to PDF, returns both
 """
 
+import base64
 import copy
 import glob
 import logging
 import os
+import shutil
+import subprocess
+import tempfile
 
 import yaml
 from flask import Flask, jsonify, request, send_from_directory, Response
@@ -31,6 +37,9 @@ app = Flask(__name__, static_folder=STATIC_DIR if os.path.isdir(STATIC_DIR) else
 CORS(app)
 
 _schema_cache = None
+
+# Path to the ConfigDocumentation script kept from the TCT source tree
+_INTNOTE_SCRIPT = "/opt/TopCPToolkit/ConfigDocumentation/generateConfigInformation.py"
 
 
 def _build_schema():
@@ -64,6 +73,16 @@ def _get_tct_version():
         return None
 
 
+def _pdflatex_available():
+    """Return True if pdflatex is on PATH."""
+    return shutil.which("pdflatex") is not None
+
+
+def _intnote_available():
+    """Return True if both the TCT script and pdflatex are present."""
+    return os.path.isfile(_INTNOTE_SCRIPT) and _pdflatex_available()
+
+
 @app.before_request
 def _warm_schema():
     global _schema_cache
@@ -86,6 +105,7 @@ def health():
         "app_version": APP_VERSION,
         "ab_version": _get_ab_version(),
         "tct_version": _get_tct_version(),
+        "pdflatex": _pdflatex_available(),
     })
 
 
@@ -112,6 +132,126 @@ def export_yaml():
             "Content-Type": "application/x-yaml",
         },
     )
+
+
+@app.route("/api/generate-intnote", methods=["POST"])
+def generate_intnote():
+    """
+    Accept a TopCPToolkit JSON configuration file, run
+    generateConfigInformation.py on it, compile the resulting .tex with
+    pdflatex, and return the PDF (base64) + .tex source.
+
+    Form fields:
+        json      – the JSON file (required)
+        sections  – comma-separated list of sections, e.g. "muon,jet,met"
+                    (optional; omit to generate all sections)
+    """
+    # ── Availability checks ──────────────────────────────────────────────────
+    if not os.path.isfile(_INTNOTE_SCRIPT):
+        return jsonify({
+            "error": "TopCPToolkit not available — generateConfigInformation.py not found. "
+                     "Rebuild the image with TCT_VERSION set.",
+        }), 400
+
+    if not _pdflatex_available():
+        return jsonify({
+            "error": "pdflatex not found. Rebuild the image with texlive installed.",
+        }), 400
+
+    # ── Input validation ─────────────────────────────────────────────────────
+    json_file = request.files.get("json")
+    if not json_file:
+        return jsonify({"error": "No JSON file provided"}), 400
+
+    sections = request.form.get("sections", "").strip()
+
+    # ── Run in a temp directory ──────────────────────────────────────────────
+    with tempfile.TemporaryDirectory() as tmpdir:
+        json_path = os.path.join(tmpdir, "config.json")
+        tex_path  = os.path.join(tmpdir, "output.tex")
+        json_file.save(json_path)
+
+        # 1. Run the TopCPToolkit script
+        cmd = ["python3", _INTNOTE_SCRIPT, json_path, "-o", tex_path]
+        if sections:
+            cmd += ["--sections", sections]
+
+        logger.info("Running: %s", " ".join(cmd))
+        try:
+            script_result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=120,
+                cwd=tmpdir,
+            )
+        except subprocess.TimeoutExpired:
+            return jsonify({"error": "Script timed out after 120 s"}), 400
+
+        script_stdout = script_result.stdout
+        script_stderr = script_result.stderr
+
+        if script_result.returncode != 0:
+            return jsonify({
+                "error": "generateConfigInformation.py exited with an error",
+                "stdout": script_stdout,
+                "stderr": script_stderr,
+            }), 400
+
+        if not os.path.exists(tex_path):
+            return jsonify({
+                "error": "Script succeeded but produced no output file",
+                "stdout": script_stdout,
+                "stderr": script_stderr,
+            }), 400
+
+        with open(tex_path, encoding="utf-8", errors="replace") as fh:
+            tex_content = fh.read()
+
+        # 2. Compile to PDF with pdflatex
+        logger.info("Compiling PDF with pdflatex…")
+        try:
+            pdf_result = subprocess.run(
+                [
+                    "pdflatex",
+                    "-interaction=nonstopmode",
+                    "-output-directory", tmpdir,
+                    tex_path,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=120,
+                cwd=tmpdir,
+            )
+        except subprocess.TimeoutExpired:
+            return jsonify({
+                "error": "pdflatex timed out after 120 s",
+                "tex": tex_content,
+                "stdout": script_stdout,
+                "stderr": script_stderr,
+            }), 400
+
+        # pdflatex names the PDF after the input filename (output.pdf)
+        pdf_path = os.path.join(tmpdir, "output.pdf")
+
+        if not os.path.exists(pdf_path):
+            return jsonify({
+                "error": "pdflatex failed to produce a PDF",
+                "tex": tex_content,
+                "stdout": script_stdout,
+                "stderr": script_stderr,
+                "pdf_log": pdf_result.stdout + "\n" + pdf_result.stderr,
+            }), 400
+
+        with open(pdf_path, "rb") as fh:
+            pdf_bytes = fh.read()
+
+        return jsonify({
+            "pdf": base64.b64encode(pdf_bytes).decode(),
+            "tex": tex_content,
+            "stdout": script_stdout,
+            "stderr": script_stderr,
+        })
 
 
 @app.route("/", defaults={"path": ""})

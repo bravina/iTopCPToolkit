@@ -27,6 +27,26 @@ RUN source /home/atlas/release_setup.sh \
 RUN source /home/atlas/release_setup.sh \
  && python3 -m pip install --quiet flask flask-cors pyyaml
 
+# Install pdflatex for INTnote PDF generation
+# Tries dnf (RHEL 8/9) first, falls back to yum (RHEL 7); silently continues if unavailable
+RUN dnf install -y \
+        texlive \
+        texlive-latex \
+        texlive-geometry \
+        texlive-amsmath \
+        texlive-xcolor \
+        texlive-collection-fontsrecommended \
+        2>/dev/null \
+    || yum install -y \
+        texlive \
+        texlive-latex \
+        texlive-geometry \
+        texlive-amsmath \
+        texlive-color \
+        texlive-collection-fontsrecommended \
+        2>/dev/null \
+    || echo "WARNING: texlive not installed — PDF generation will be disabled"
+
 # ── Clone and build TopCPToolkit ─────────────────────────────────────────────
 # Pass your CERN GitLab personal access token at build time:
 #   docker build --secret id=cern_token,env=CERN_TOKEN ...
@@ -62,6 +82,7 @@ RUN --mount=type=secret,id=cern_token \
         && cd /opt/TopCPToolkit/build \
         && cmake /tmp/TopCPToolkit-src/source \
         && make -j$(nproc) \
+        && cp -r /tmp/TopCPToolkit-src/source/ConfigDocumentation /opt/TopCPToolkit/ConfigDocumentation \
         && rm -rf /tmp/TopCPToolkit-src ; \
     fi
 

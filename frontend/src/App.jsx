@@ -7,6 +7,7 @@ import MobileLayout from './components/MobileLayout.jsx'
 import SplashScreen from './components/SplashScreen.jsx'
 import ModeSelector from './components/ModeSelector.jsx'
 import ConfigReader from './components/ConfigReader.jsx'
+import IntNoteWriter from './components/IntNoteWriter.jsx'
 import SearchOverlay from './components/SearchOverlay.jsx'
 import { useConfig } from './hooks/useConfig.js'
 import { toYamlString } from './utils/yamlSerializer.js'
@@ -51,6 +52,7 @@ export default function App() {
   const [appVersion, setAppVersion] = useState(null)
   const [abVersion, setAbVersion] = useState(null)
   const [tctVersion, setTctVersion] = useState(undefined)
+  const [pdflatex, setPdflatex] = useState(false)
   const [athena, setAthena] = useState(null)
   const [searchOpen, setSearchOpen] = useState(false)
   const isMobile = useIsMobile()
@@ -72,6 +74,7 @@ export default function App() {
         setAppVersion(health.app_version)
         setAbVersion(health.ab_version)
         setTctVersion(health.tct_version ?? null)
+        setPdflatex(health.pdflatex ?? false)
         init(schemaData)
         setSelected(schemaData[0]?.name ?? null)
         setLoading(false)
@@ -305,7 +308,7 @@ export default function App() {
           {exportMsg && <span className="text-xs text-green-400 shrink-0">{exportMsg}</span>}
 
           {/* Search button — shows Cmd+F / Ctrl+F shortcut */}
-          {mode && (
+          {mode && mode !== 'intnote' && (
             <button
               type="button"
               onClick={() => setSearchOpen(true)}
@@ -335,12 +338,19 @@ export default function App() {
               >
                 ◉ Reader
               </button>
+              <button
+                type="button"
+                onClick={() => setMode('intnote')}
+                className={`text-xs px-2 py-0.5 rounded transition-colors ${mode === 'intnote' ? 'bg-amber-600 text-white' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700'}`}
+              >
+                ✍ INTnote
+              </button>
             </div>
           )}
         </header>
 
         {!showSplash && mode === null && (
-          <ModeSelector onSelect={setMode} appVersion={appVersion} />
+          <ModeSelector onSelect={setMode} appVersion={appVersion} tctVersion={tctVersion} pdflatex={pdflatex} />
         )}
 
         {mode === 'builder' && (
@@ -362,6 +372,12 @@ export default function App() {
               onOpenInBuilder={handleOpenInBuilder}
               onOpenSearch={() => setSearchOpen(true)}
             />
+          </div>
+        )}
+
+        {mode === 'intnote' && (
+          <div className="flex flex-1 overflow-hidden">
+            <IntNoteWriter tctVersion={tctVersion} pdflatex={pdflatex} />
           </div>
         )}
       </div>
