@@ -211,6 +211,10 @@ def generate_intnote():
         # 2. Compile to PDF with pdflatex
         logger.info("Compiling PDF with pdflatex…")
         try:
+            pdf_env = os.environ.copy()
+            pdf_env["HOME"]        = tmpdir  # pdflatex writes format cache to $HOME/.texlive*
+            pdf_env["TEXMFVAR"]    = tmpdir  # explicit override for OpenShift non-root UIDs
+            pdf_env["TEXMFCONFIG"] = tmpdir
             pdf_result = subprocess.run(
                 [
                     "pdflatex",
@@ -222,6 +226,7 @@ def generate_intnote():
                 text=True,
                 timeout=120,
                 cwd=tmpdir,
+                env=pdf_env,
             )
         except subprocess.TimeoutExpired:
             return jsonify({
