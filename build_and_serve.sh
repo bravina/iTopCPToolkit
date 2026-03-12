@@ -7,6 +7,7 @@
 # or : docker build   --secret id=cern_token,env=CERN_TOKEN   --build-arg AB_TAG=25.2.86 --build-arg TCT_VERSION=v2.24.0  -t tct-gui .
 
 docker build \
+  --platform linux/amd64 \
   --secret id=cern_token,env=CERN_TOKEN \
   --build-arg AB_TAG=25.2.86 \
   --build-arg TCT_VERSION=v2.24.0 \

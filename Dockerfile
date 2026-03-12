@@ -6,7 +6,7 @@ ARG AB_TAG=25.2.86
 ARG TCT_VERSION=v2.24.0
 
 # ── Stage 1: build the React frontend ────────────────────────────────────────
-FROM --platform=linux/amd64 node:20-slim AS frontend-build
+FROM --platform=$BUILDPLATFORM node:24-slim AS frontend-build
 WORKDIR /app/frontend
 COPY frontend/package*.json ./
 RUN npm install
@@ -15,7 +15,8 @@ RUN npm run build
 
 # ── Stage 2: runtime (AnalysisBase + Flask + TopCPToolkit) ───────────────────
 ARG AB_TAG
-FROM --platform=linux/amd64 gitlab-registry.cern.ch/atlas/athena/analysisbase:${AB_TAG}
+ARG TARGETPLATFORM
+FROM --platform=$TARGETPLATFORM gitlab-registry.cern.ch/atlas/athena/analysisbase:${AB_TAG}
 
 USER root
 SHELL ["/bin/bash", "-c"]

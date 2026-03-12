@@ -39,6 +39,7 @@ jobs:
         with:
           context: .
           push: true
+          platforms: linux/amd64
           tags: registry.cern.ch/itopcptoolkit/itopcptoolkit:latest
           build-args: ${{ steps.buildargs.outputs.args }}
           secrets: |
