@@ -64,13 +64,13 @@ autocomplete and YAML annotator entirely in the browser.
 
 ```bash
 # Build without TopCPToolkit (fast, options will be introspected)
-docker build --build-arg AB_TAG=25.2.86 -t tct-gui .
+docker build --build-arg AB_TAG=25.2.88 -t tct-gui .
 
 # Build with a specific TopCPToolkit version (enables INTnote Writer)
 export CERN_TOKEN=glpat-xxxxxxxxxxxx   # CERN GitLab personal access token
 docker build \
   --secret id=cern_token,env=CERN_TOKEN \
-  --build-arg AB_TAG=25.2.86 \
+  --build-arg AB_TAG=25.2.88 \
   --build-arg TCT_VERSION=v2.24.0 \
   -t tct-gui .
 
@@ -120,7 +120,7 @@ To release a new version, update `VERSION` and push to `main`.
 | `CERN_REGISTRY_USER` | Secret | Harbor registry username |
 | `CERN_REGISTRY_TOKEN` | Secret | Harbor CLI secret (from registry.cern.ch → User Profile) |
 | `CERN_TOKEN` | Secret | CERN GitLab PAT (only needed for TopCPToolkit builds) |
-| `AB_TAG` | Variable | AnalysisBase tag (e.g. `25.2.86`), optional |
+| `AB_TAG` | Variable | AnalysisBase tag (e.g. `25.2.88`), optional |
 | `TCT_VERSION` | Variable | TopCPToolkit version (e.g. `v2.24.0`), optional |
 
 ### One-time OKD setup

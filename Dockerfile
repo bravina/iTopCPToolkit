@@ -2,7 +2,7 @@
 # ^^^ Required for --mount=type=secret support
 
 # ARG before the first FROM so it is usable in both FROM lines
-ARG AB_TAG=25.2.86
+ARG AB_TAG=25.2.88
 ARG TCT_VERSION=v2.24.0
 
 # ── Stage 1: build the React frontend ────────────────────────────────────────
@@ -27,18 +27,19 @@ RUN source /home/atlas/release_setup.sh \
 RUN source /home/atlas/release_setup.sh \
  && python3 -m pip install --quiet flask flask-cors pyyaml pytest
 
-# Install pdflatex for INTnote PDF generation
-# Tries dnf (RHEL 8/9); silently continues if unavailable
+# Install pdflatex for INTnote PDF generation (AlmaLinux 9, AppStream/BaseOS repo only)
+# Silently skips if unavailable rather than failing the build.
 RUN dnf install -y \
-        --disablerepo='tdaq*' \
-        --disablerepo=dqm-common-testing \
+        --disablerepo='*' \
+        --enablerepo=appstream \
+        --enablerepo=baseos \
         texlive \
         texlive-latex \
         texlive-geometry \
         texlive-amsmath \
         texlive-xcolor \
         texlive-collection-fontsrecommended \
-        2>/dev/null \
+    2>/dev/null \
     || echo "WARNING: texlive not installed — PDF generation will be disabled"
 
 # ── Clone and build TopCPToolkit ─────────────────────────────────────────────
