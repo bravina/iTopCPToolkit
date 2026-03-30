@@ -1,9 +1,65 @@
-# Block tree derived from ConfigFactory.py
-# Each entry maps a YAML top-level key to its Python class/function,
-# its sub-blocks, and whether it can appear multiple times (list in YAML).
+# backend/block_schema.py
+#
+# This file defines the full tree of configuration blocks exposed by the GUI.
+# It is the PRIMARY file to edit when:
+#   - Adding a new top-level block (e.g. a new algorithm)
+#   - Adding a new sub-block to an existing block
+#   - Changing how a block is labelled or grouped in the sidebar
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# HOW TO ADD A NEW TOP-LEVEL BLOCK
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Append a new entry to BLOCK_TREE following this template:
+#
+#   {
+#       "name":       "MyBlock",          # Key used in the YAML output
+#       "label":      "My Block",         # Human-readable name in the sidebar
+#       "group":      "Core",             # Sidebar group: Core | Objects | Selection | Output
+#       "repeatable": False,              # True → block appears as a YAML list (multiple instances)
+#       "class_path": "MyPkg.MyModule.MyConfigClass",  # Python import path to ConfigBlock subclass
+#       "is_function": False,             # True if class_path points to a factory function, not a class
+#       "sub_blocks":  [],                # List of sub-block dicts (see below)
+#   }
+#
+# The class_path must be importable inside the Docker container (i.e. in the Athena environment).
+# If the class is not found, the block will still appear in the GUI with an empty options list.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# HOW TO ADD A NEW SUB-BLOCK
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Add an entry to the "sub_blocks" list of the parent block:
+#
+#   {
+#       "name":        "MySubBlock",      # Key used in the YAML output (under parent)
+#       "label":       "My Sub-Block",    # Human-readable name in the editor panel
+#       "repeatable":  False,             # True → sub-block can have multiple instances
+#       "class_path":  "MyPkg.MyModule.MySubClass",
+#       "is_function": False,
+#       "sub_blocks":  [],                # Sub-blocks do not support further nesting
+#   }
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# REPEATABLE vs. SINGULAR blocks
+# ─────────────────────────────────────────────────────────────────────────────
+#
+#   repeatable: False  →  block serialises as a YAML dict  (Jets: {containerName: ...})
+#   repeatable: True   →  block serialises as a YAML list  (Jets: [{containerName: AnaJets}, ...])
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# GROUPS
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Any string is valid; it controls the collapsible section in the left sidebar.
+# Current convention: "Core" | "Objects" | "Selection" | "Output"
+#
+# ─────────────────────────────────────────────────────────────────────────────
 
 BLOCK_TREE = [
-    # ── Core ────────────────────────────────────────────────────────────────
+
+    # ── Core ──────────────────────────────────────────────────────────────────
+
     {
         "name": "CommonServices",
         "label": "Common Services",
@@ -49,7 +105,9 @@ BLOCK_TREE = [
         "is_function": False,
         "sub_blocks": [],
     },
-    # ── Objects ─────────────────────────────────────────────────────────────
+
+    # ── Objects ───────────────────────────────────────────────────────────────
+
     {
         "name": "Jets",
         "label": "Jets",
@@ -277,7 +335,9 @@ BLOCK_TREE = [
         "is_function": False,
         "sub_blocks": [],
     },
-    # ── Selection ────────────────────────────────────────────────────────────
+
+    # ── Selection ─────────────────────────────────────────────────────────────
+
     {
         "name": "OverlapRemoval",
         "label": "Overlap Removal",
@@ -288,10 +348,12 @@ BLOCK_TREE = [
         "sub_blocks": [],
     },
     {
+        # EventSelection uses makeMultipleEventSelectionConfigs, a factory function that
+        # accepts a selectionCutsDict argument. The GUI renders a dedicated editor for it.
         "name": "EventSelection",
         "label": "Event Selection",
         "group": "Selection",
-        "repeatable": False,  # selectionCutsDict handles all regions internally
+        "repeatable": False,
         "class_path": "EventSelectionAlgorithms.EventSelectionConfig.makeMultipleEventSelectionConfigs",
         "is_function": True,
         "sub_blocks": [],
@@ -314,7 +376,9 @@ BLOCK_TREE = [
         "is_function": False,
         "sub_blocks": [],
     },
-    # ── Output ───────────────────────────────────────────────────────────────
+
+    # ── Output ────────────────────────────────────────────────────────────────
+
     {
         "name": "Thinning",
         "label": "Output Thinning",

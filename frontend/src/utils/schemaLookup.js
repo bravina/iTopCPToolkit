@@ -1,6 +1,24 @@
 /**
- * Build a fast lookup structure from the schema array.
- * Returns: { blockName: { def, optionsByName, subBlocksByName } }
+ * schemaLookup.js
+ *
+ * Converts the flat schema array returned by /api/schema into a fast
+ * lookup structure indexed by block name.
+ *
+ * Used by yamlLineBuilder, yamlValidator, and dependencyChecker to avoid
+ * repeated .find() scans over the schema array.
+ */
+
+/**
+ * Build a lookup map from the schema array.
+ *
+ * Returns:
+ *   {
+ *     [blockName]: {
+ *       def:             full block definition object,
+ *       optionsByName:   { [optName]: option definition },
+ *       subBlocksByName: { [subName]: { def, optionsByName } }
+ *     }
+ *   }
  */
 export function buildSchemaLookup(schema) {
   const blocks = {}

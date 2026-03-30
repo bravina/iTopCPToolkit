@@ -1,9 +1,43 @@
+/**
+ * selectionCutsSerializer.js
+ *
+ * Parses and serialises TopCPToolkit event-selection cut strings.
+ *
+ * The "selectionCutsDict" YAML option is a dict mapping region names to
+ * multi-line cut strings, e.g.:
+ *
+ *   selectionCutsDict:
+ *     signal: |
+ *       EL_N 25000 >= 1
+ *       MET >= 30000
+ *       SAVE
+ *
+ * This module converts between three representations:
+ *   1. Raw text  – the newline-delimited string stored in YAML
+ *   2. Structured cuts – array of { id, keyword, args } objects used by the
+ *      visual editor (SelectionCutsEditor / CutRowForm)
+ *   3. selectionCutsDict – the JS object written back to the config state
+ *
+ * Each keyword has a fixed argument schema; see EventSelectionConfig.py for
+ * the authoritative list of supported keywords and their argument formats.
+ */
+
 import { v4 as uuid } from 'uuid'
 
+/** Comparison operators accepted by EventSelectionConfig. */
 export const SIGNS = ['<', '>', '==', '>=', '<=']
 
 function isSign(t) { return SIGNS.includes(t) }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// PARSING: raw text → structured cuts
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Parse a single cut line into a structured { keyword, args } object.
+ * Returns null for blank lines, comments and the terminal SAVE keyword.
+ * Falls back to { keyword: '__raw__', args: { rawText } } for unrecognised lines.
+ */
 function parseLine(line) {
   const trimmed = line.trim()
   if (!trimmed || trimmed.startsWith('#') || trimmed === 'SAVE') return null
@@ -105,16 +139,21 @@ function parseLine(line) {
           return { id: uuid(), keyword, args: { obj: rest[0], ptmin: rest[1], sign: rest[2], count: rest[3] || '' } }
         break
     }
-  } catch (_) { /* fall through */ }
+  } catch (_) { /* fall through to __raw__ */ }
 
   return { id: uuid(), keyword: '__raw__', args: { rawText: trimmed } }
 }
 
+/** Parse a multi-line cut string into an array of structured cut objects. */
 export function parseSelectionCutsString(str) {
   if (!str) return []
   return str.split('\n').map(parseLine).filter(Boolean)
 }
 
+/**
+ * Parse a selectionCutsDict object (region name → cut string) into the array
+ * of { id, name, cuts } selection objects used by SelectionCutsDictEditor.
+ */
 export function parseSelectionCutsDict(value) {
   if (!value || typeof value !== 'object') return []
   return Object.entries(value).map(([name, cutsStr]) => ({
@@ -124,17 +163,22 @@ export function parseSelectionCutsDict(value) {
   }))
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// SERIALISATION: structured cuts → raw text
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Serialise a single structured cut back to its text representation. */
 export function serializeCut(cut) {
   if (!cut?.keyword) return ''
   const { keyword: kw, args } = cut
   switch (kw) {
     case '__raw__': return args.rawText || ''
-    case 'OS': return 'OS'
-    case 'SS': return 'SS'
+    case 'OS':  return 'OS'
+    case 'SS':  return 'SS'
     case 'GLOBALTRIGMATCH': return args.postfix ? `GLOBALTRIGMATCH ${args.postfix}` : 'GLOBALTRIGMATCH'
-    case 'EVENTFLAG': return `EVENTFLAG ${args.sel || ''}`
-    case 'IMPORT': return `IMPORT ${args.subreg || ''}`
-    case 'RUN_NUMBER': return `RUN_NUMBER ${args.sign || '>='} ${args.ref || ''}`
+    case 'EVENTFLAG':   return `EVENTFLAG ${args.sel || ''}`
+    case 'IMPORT':      return `IMPORT ${args.subreg || ''}`
+    case 'RUN_NUMBER':  return `RUN_NUMBER ${args.sign || '>='} ${args.ref || ''}`
     case 'MET': case 'MWT': case 'MET+MWT': case 'MLL':
       return `${kw} ${args.sign || '>='} ${args.ref || ''}`
     case 'MLLWINDOW': case 'MLL_OSSF': {
@@ -207,11 +251,19 @@ export function serializeCut(cut) {
   }
 }
 
+/**
+ * Convert an array of structured cut objects to a raw multi-line string,
+ * appending a final SAVE line (required by EventSelectionConfig).
+ */
 export function cutsToRawText(cuts) {
   const lines = cuts.map(serializeCut).filter(l => l && l.trim() !== 'SAVE')
   return lines.join('\n') + '\nSAVE'
 }
 
+/**
+ * Serialise the full array of selections to the selectionCutsDict format
+ * expected by the YAML config.
+ */
 export function serializeSelectionCutsDict(selections) {
   if (!selections?.length) return null
   const result = {}

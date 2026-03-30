@@ -1,11 +1,26 @@
+/**
+ * yamlLineBuilder.js
+ *
+ * Converts a parsed YAML config object into a flat array of annotated "line"
+ * objects.  Each line carries enough metadata (option schema info, sub-block
+ * info, path, indent level) for AnnotatedYamlView to render it with colours,
+ * ⓘ tooltips, and diff highlighting without needing to re-query the schema.
+ *
+ * This module is also used by yamlAnnotator.js to generate the downloadable
+ * annotated YAML file.
+ */
+
 import { buildSchemaLookup } from './schemaLookup.js'
 
+/**
+ * Format a scalar value for YAML output.
+ * Strings that contain YAML-special characters are single-quoted.
+ */
 export function formatScalar(value) {
   if (value === null || value === undefined) return 'null'
   if (typeof value === 'boolean') return String(value)
-  if (typeof value === 'number') return String(value)
+  if (typeof value === 'number')  return String(value)
   if (typeof value === 'string') {
-    // Quote strings that need it
     if (value === '' || /[:#{}&*!,[\]|>'"%@`]/.test(value) || value.includes("'")) {
       return `'${value.replace(/'/g, "''")}'`
     }
@@ -17,15 +32,19 @@ export function formatScalar(value) {
 /**
  * Build a flat list of annotated line objects from a config object + schema.
  *
- * Line types:
- *   blank          – empty line separator
- *   block-header   – top-level key (Jets:, Electrons:, ...)
- *   key-only       – key whose value is an object/list (continues below)
- *   kv             – key: value pair
- *
- * Each non-blank line has:
- *   key, indent, isListStart, optInfo, subInfo, blockDef, unknown, path
- *   For kv: also valueStr, rawValue
+ * Line object fields:
+ *   type        – 'blank' | 'block-header' | 'key-only' | 'kv'
+ *   lineNum     – 1-based line number for display
+ *   key         – YAML key string
+ *   indent      – number of leading spaces
+ *   isListStart – true if this is the first key of a YAML list item (gets "- " prefix)
+ *   optInfo     – option schema definition, or null
+ *   subInfo     – sub-block schema definition, or null
+ *   blockDef    – top-level block definition (block-header lines only)
+ *   unknown     – true when the key is not recognised in the schema
+ *   path        – dot-notation path, e.g. "Jets[0].JVT.selectionName"
+ *   valueStr    – formatted string for display (kv lines)
+ *   rawValue    – raw JS value (kv lines)
  */
 export function buildLines(configObj, schema) {
   const lookup = buildSchemaLookup(schema)
@@ -52,25 +71,26 @@ export function buildLines(configObj, schema) {
     if (blockValue === null || blockValue === undefined) return
 
     if (Array.isArray(blockValue)) {
-      // List block: content indent = 4 (dash at 2, key at 4)
+      // List block: list item dash at indent 2, key-value pairs at indent 4
       blockValue.forEach((inst, i) => {
         if (!inst || typeof inst !== 'object') return
         traverseObj(inst, blockInfo, 4, true, `${blockKey}[${i}]`, push)
       })
     } else if (typeof blockValue === 'object' && Object.keys(blockValue).length > 0) {
-      // Dict block: content indent = 2
+      // Dict block: key-value pairs at indent 2
       traverseObj(blockValue, blockInfo, 2, false, blockKey, push)
     }
-    // else: empty block {} — header only is sufficient
+    // Empty block {} → header line is sufficient
   })
 
   return lines
 }
 
+/** Recursively walk an object and push line entries for each key. */
 function traverseObj(obj, blockInfo, indent, isListItem, path, push) {
   const entries = Object.entries(obj || {})
   entries.forEach(([key, value], idx) => {
-    // All keys in a list item share the same indent; only first gets '- ' prefix
+    // Only the first key in a list item gets the "- " prefix
     const isListStart = isListItem && idx === 0
     const optInfo = blockInfo?.optionsByName?.[key] ?? null
     const subInfo = blockInfo?.subBlocksByName?.[key] ?? null
@@ -88,10 +108,11 @@ function traverseObj(obj, blockInfo, indent, isListItem, path, push) {
       if (value.length === 0) {
         push({ ...base, type: 'kv', valueStr: '[]', rawValue: [] })
       } else if (value.every(v => v === null || typeof v !== 'object')) {
+        // Inline array of scalars
         push({ ...base, type: 'kv', valueStr: `[${value.map(formatScalar).join(', ')}]`, rawValue: value })
       } else {
+        // Array of objects: emit header then recurse
         push({ ...base, type: 'key-only' })
-        // List sub-items: content indent = parent key indent + 4
         value.forEach((item, i) => {
           if (item && typeof item === 'object') {
             traverseObj(item, subInfo || blockInfo, indent + 4, true, `${fullPath}[${i}]`, push)
@@ -106,7 +127,6 @@ function traverseObj(obj, blockInfo, indent, isListItem, path, push) {
         push({ ...base, type: 'kv', valueStr: '{}', rawValue: {} })
       } else {
         push({ ...base, type: 'key-only' })
-        // Dict sub-items: content indent = parent key indent + 2
         traverseObj(value, subInfo || blockInfo, indent + 2, false, fullPath, push)
       }
       return
@@ -117,8 +137,8 @@ function traverseObj(obj, blockInfo, indent, isListItem, path, push) {
 }
 
 /**
- * Given indent + isListStart, return the visual prefix string.
- * isListStart → '  - ' style prefix placing dash at (indent-2)
+ * Convert an indent level and list-start flag to the visual prefix string.
+ * List items get "  - " so the dash sits at (indent - 2) spaces.
  */
 export function renderPrefix(indent, isListStart) {
   if (isListStart && indent >= 2) {
@@ -127,8 +147,13 @@ export function renderPrefix(indent, isListStart) {
   return ' '.repeat(indent)
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// DIFF UTILITIES
+// ─────────────────────────────────────────────────────────────────────────────
+
 /**
- * Flatten a config object to { 'path.to.key': value } for diffing.
+ * Flatten a nested config object to { 'path.to.key': value }.
+ * Array indices are represented as [0], [1], etc.
  */
 export function flattenConfig(obj, prefix = '') {
   const result = {}
@@ -137,9 +162,7 @@ export function flattenConfig(obj, prefix = '') {
     return result
   }
   if (Array.isArray(obj)) {
-    obj.forEach((item, i) => {
-      Object.assign(result, flattenConfig(item, `${prefix}[${i}]`))
-    })
+    obj.forEach((item, i) => Object.assign(result, flattenConfig(item, `${prefix}[${i}]`)))
     return result
   }
   if (typeof obj === 'object') {
@@ -159,7 +182,7 @@ export function flattenConfig(obj, prefix = '') {
 
 /**
  * Compute a structural diff between two config objects.
- * Returns { path: { status: 'added'|'removed'|'changed', valueA, valueB } }
+ * Returns { [path]: { status: 'added'|'removed'|'changed', valueA, valueB } }
  */
 export function computeDiff(objA, objB) {
   const flatA = flattenConfig(objA)
@@ -169,9 +192,11 @@ export function computeDiff(objA, objB) {
   for (const p of allPaths) {
     const inA = p in flatA
     const inB = p in flatB
-    if (!inA) diff[p] = { status: 'added', valueA: undefined, valueB: flatB[p] }
-    else if (!inB) diff[p] = { status: 'removed', valueA: flatA[p], valueB: undefined }
-    else if (JSON.stringify(flatA[p]) !== JSON.stringify(flatB[p])) {
+    if (!inA) {
+      diff[p] = { status: 'added',   valueA: undefined, valueB: flatB[p] }
+    } else if (!inB) {
+      diff[p] = { status: 'removed', valueA: flatA[p], valueB: undefined }
+    } else if (JSON.stringify(flatA[p]) !== JSON.stringify(flatB[p])) {
       diff[p] = { status: 'changed', valueA: flatA[p], valueB: flatB[p] }
     }
   }
