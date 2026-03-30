@@ -198,6 +198,7 @@ export default function App() {
       selected={selected}
       onSelect={handleSidebarSelect}
       onToggle={handleSidebarToggle}
+      onAddInstance={addInstance}
       docsUrl={docsUrl}
       depIssues={depIssues}
     />

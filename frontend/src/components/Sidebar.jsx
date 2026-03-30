@@ -1,4 +1,4 @@
-export default function Sidebar({ schema, config, selected, onSelect, onToggle, docsUrl }) {
+export default function Sidebar({ schema, config, selected, onSelect, onToggle, onAddInstance, docsUrl, depIssues }) {
   const groups = {}
   for (const block of schema) {
     const g = block.group || 'Other'
@@ -27,8 +27,11 @@ export default function Sidebar({ schema, config, selected, onSelect, onToggle, 
               {groupName}
             </p>
             {blocks.map(block => {
-              const enabled = config[block.name]?.enabled ?? false
+              const blockState = config[block.name]
+              const enabled = blockState?.enabled ?? false
               const isSelected = selected === block.name
+              const instanceCount = blockState?.instances?.length ?? 1
+
               return (
                 <div
                   key={block.name}
@@ -38,6 +41,7 @@ export default function Sidebar({ schema, config, selected, onSelect, onToggle, 
                       : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
                   }`}
                 >
+                  {/* Enable/disable toggle */}
                   <button
                     type="button"
                     onClick={(e) => { e.stopPropagation(); onToggle(block.name) }}
@@ -51,6 +55,7 @@ export default function Sidebar({ schema, config, selected, onSelect, onToggle, 
                     }`} />
                   </button>
 
+                  {/* Block label — navigates to block */}
                   <span
                     onClick={() => onSelect(block.name)}
                     className="text-sm leading-none flex-1 truncate"
@@ -58,8 +63,31 @@ export default function Sidebar({ schema, config, selected, onSelect, onToggle, 
                     {block.label}
                   </span>
 
+                  {/* Repeatable indicator */}
                   {block.repeatable && (
-                    <span className="text-xs text-slate-600" title="Repeatable (list)">[]</span>
+                    <span className="flex items-center gap-0.5 shrink-0">
+                      <span
+                        className={`text-xs font-mono ${enabled ? 'text-slate-400' : 'text-slate-600'}`}
+                        title={enabled
+                          ? `${instanceCount} instance${instanceCount !== 1 ? 's' : ''} configured`
+                          : 'Repeatable — multiple instances allowed'}
+                      >
+                        [{enabled ? instanceCount : 0}]
+                      </span>
+                      {enabled && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            onAddInstance(block.name, block)
+                          }}
+                          className="text-xs text-slate-500 hover:text-blue-300 font-mono leading-none transition-colors px-0.5"
+                          title="Add another instance"
+                        >
+                          +
+                        </button>
+                      )}
+                    </span>
                   )}
                 </div>
               )
