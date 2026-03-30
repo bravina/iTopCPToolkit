@@ -28,21 +28,15 @@ RUN source /home/atlas/release_setup.sh \
  && python3 -m pip install --quiet flask flask-cors pyyaml pytest
 
 # Install pdflatex for INTnote PDF generation
-# Tries dnf (RHEL 8/9) first, falls back to yum (RHEL 7); silently continues if unavailable
+# Tries dnf (RHEL 8/9); silently continues if unavailable
 RUN dnf install -y \
+        --disablerepo='tdaq*' \
+        --disablerepo=dqm-common-testing \
         texlive \
         texlive-latex \
         texlive-geometry \
         texlive-amsmath \
         texlive-xcolor \
-        texlive-collection-fontsrecommended \
-        2>/dev/null \
-    || yum install -y \
-        texlive \
-        texlive-latex \
-        texlive-geometry \
-        texlive-amsmath \
-        texlive-color \
         texlive-collection-fontsrecommended \
         2>/dev/null \
     || echo "WARNING: texlive not installed — PDF generation will be disabled"
