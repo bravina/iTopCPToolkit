@@ -25,7 +25,7 @@ RUN source /home/atlas/release_setup.sh \
  && python3 -m ensurepip --upgrade 2>/dev/null \
  || (curl -sSL https://bootstrap.pypa.io/get-pip.py | python3)
 RUN source /home/atlas/release_setup.sh \
- && python3 -m pip install --quiet flask flask-cors pyyaml
+ && python3 -m pip install --quiet flask flask-cors pyyaml pytest
 
 # Install pdflatex for INTnote PDF generation
 # Tries dnf (RHEL 8/9) first, falls back to yum (RHEL 7); silently continues if unavailable

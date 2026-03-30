@@ -1,2 +1,3 @@
-secret_token.sh
+sec*en.sh
 *.DS_Store*
+*node_modules*

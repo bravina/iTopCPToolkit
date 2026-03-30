@@ -55,7 +55,7 @@ export function buildLines(configObj, schema) {
 
   const entries = Object.entries(configObj || {})
   entries.forEach(([blockKey, blockValue], blockIdx) => {
-    if (blockIdx > 0) push({ type: 'blank', lineNum: lineNum++ })
+    if (blockIdx > 0) push({ type: 'blank' })
 
     const blockInfo = lookup[blockKey]
     push({

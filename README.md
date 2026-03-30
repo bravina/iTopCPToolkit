@@ -12,13 +12,14 @@ An interactive web GUI for building [TopCPToolkit](https://topcptoolkit.docs.cer
 2. [Architecture](#architecture)
 3. [Running locally](#running-locally)
 4. [Deployment](#deployment)
-5. [How to add a new config block](#how-to-add-a-new-config-block)
-6. [How to add a new sub-block](#how-to-add-a-new-sub-block)
-7. [How to add a new event-selection keyword](#how-to-add-a-new-event-selection-keyword)
-8. [How to add a new physics-object type to the collection registry](#how-to-add-a-new-physics-object-type-to-the-collection-registry)
-9. [How to add a new application mode](#how-to-add-a-new-application-mode)
-10. [Code map](#code-map)
-11. [Contributing](#contributing)
+5. [Testing](#testing)
+6. [How to add a new config block](#how-to-add-a-new-config-block)
+7. [How to add a new sub-block](#how-to-add-a-new-sub-block)
+8. [How to add a new event-selection keyword](#how-to-add-a-new-event-selection-keyword)
+9. [How to add a new physics-object type to the collection registry](#how-to-add-a-new-physics-object-type-to-the-collection-registry)
+10. [How to add a new application mode](#how-to-add-a-new-application-mode)
+11. [Code map](#code-map)
+12. [Contributing](#contributing)
 
 ---
 
@@ -137,7 +138,81 @@ oc logs deployment/itopcptoolkit --follow
 
 ---
 
-## How to add a new config block
+## Testing
+
+The test suite is fully automatic — no expected outputs need to be maintained by hand. Tests either assert structural invariants (e.g. every block has the required keys) or roundtrip properties (e.g. parse→serialize→re-parse recovers the original). They will fail if you introduce a regression, and the only time you need to update them is when you *intentionally* change behaviour.
+
+### Running the tests locally
+
+**Backend** (no Docker needed):
+
+```bash
+cd backend
+pip install flask flask-cors pyyaml pytest
+pytest tests/ -v
+```
+
+**Frontend** (no Docker needed):
+
+```bash
+cd frontend
+npm install
+npm test
+```
+
+**Frontend via Docker** (if you don't have Node installed locally):
+
+```bash
+docker run --rm -v $(pwd)/frontend:/app -w /app node:20-slim sh -c "npm install && npm test"
+```
+
+### What each suite covers
+
+| File | What it tests |
+|---|---|
+| `backend/tests/test_block_schema.py` | Every entry in `BLOCK_TREE` has the required keys with the right types; no duplicate names; sub-blocks don't nest; `class_path` strings are well-formed |
+| `backend/tests/test_app.py` | All Flask routes return the correct HTTP status, content type, and response shape (schema mocked, no Athena needed) |
+| `frontend/src/__tests__/selectionCutsSerializer.test.js` | Every event-selection keyword parses and re-serialises correctly; roundtrip invariant holds for multi-cut strings and full `selectionCutsDict` objects |
+| `frontend/src/__tests__/yamlLineBuilder.test.js` | Line numbers are sequential; every line has required fields; `formatScalar` never throws; diff detection is correct |
+| `frontend/src/__tests__/yamlSerializer.test.js` | Options at their default value are omitted; non-default values survive serialisation; output is valid YAML |
+| `frontend/src/__tests__/yamlValidator.test.js` | Unknown blocks/options are flagged as errors; type mismatches are flagged as warnings; required options are checked; validator never throws |
+| `frontend/src/__tests__/collectionRegistry.test.js` | `buildRegistryFromState` and `buildRegistryFromYaml` produce identical registries for the same logical config; JVT adds `baselineJvt` implicitly; Thinning `outputName` creates an alias container |
+
+### Athena introspection tests (inside Docker only)
+
+`test_block_schema.py` contains an additional test class `TestAthenaIntrospection` that is automatically **skipped** outside Docker. When Athena is available (i.e. inside the container), it verifies that every `class_path` in `BLOCK_TREE` can be imported and returns a non-empty option list. This catches the most common cross-release breakage — a class being renamed or moved between AnalysisBase versions.
+
+To run these manually inside a built container:
+
+```bash
+docker run --rm tct-gui bash -c "
+  source /home/atlas/release_setup.sh &&
+  python -m pytest /app/backend/tests/ -v
+"
+```
+
+Note: `pytest` must be present in the image. Make sure the `pip install` line in the `Dockerfile` includes it:
+
+```dockerfile
+RUN source /home/atlas/release_setup.sh \
+ && python3 -m pip install --quiet flask flask-cors pyyaml pytest
+```
+
+### CI
+
+Tests run automatically on every pull request and every push to `main` via `.github/workflows/test.yml`. The backend and frontend suites run in parallel on a plain Ubuntu runner — no Docker or Athena is required for CI. A pull request cannot be merged if any test fails.
+
+### When to update the tests
+
+The tests are designed to need minimal maintenance:
+
+- **Adding a new block** — `test_block_schema.py` picks it up automatically via parametrisation over `BLOCK_TREE`. No test changes needed.
+- **Adding a new event-selection keyword** — add one line to the `KEYWORD_CASES` list in `selectionCutsSerializer.test.js` (the `[rawLine, expectedKeyword, description]` tuple). The roundtrip test is then generated automatically.
+- **Intentionally changing serialisation behaviour** — re-run the tests; the failing test tells you exactly what changed. Fix the test to match the new intended behaviour.
+
+---
+
+
 
 Everything you need to touch is in **`backend/block_schema.py`**.
 
@@ -341,6 +416,6 @@ frontend/src/
    `backend/app.py` / `backend/introspect.py` (infrastructure).
 3. For frontend changes: the utility files in `frontend/src/utils/` are the
    most common extension point; component files are self-contained.
-4. Test locally with Docker (see [Running locally](#running-locally)).
-5. Open a pull request against `main`. Merging and bumping `VERSION` triggers
-   automatic deployment.
+4. Run the test suite locally before opening a PR (see [Testing](#testing)).
+5. Open a pull request against `main`. CI will run all tests automatically.
+   Merging and bumping `VERSION` triggers automatic deployment.

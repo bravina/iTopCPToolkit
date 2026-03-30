@@ -1,0 +1,62 @@
+# .github/workflows/test.yml
+#
+# Runs all automated tests on every pull request and every push to main.
+#
+# Jobs:
+#   test-backend   – pytest tests for block_schema structure and Flask routes
+#                    (no Athena needed; runs on a plain ubuntu runner)
+#   test-frontend  – vitest unit tests for all JS utility modules
+#
+# The Athena introspection tests (TestAthenaIntrospection in test_block_schema.py)
+# are automatically skipped here because Athena is not available; they only
+# run inside the Docker build step (see deploy.yml).
+
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+
+  # ── Backend: schema structure + Flask routes ────────────────────────────────
+  test-backend:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install flask flask-cors pyyaml pytest
+
+      - name: Run backend tests
+        working-directory: backend
+        run: pytest tests/ -v
+
+  # ── Frontend: utility unit tests ────────────────────────────────────────────
+  test-frontend:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Run frontend tests
+        working-directory: frontend
+        run: npm test

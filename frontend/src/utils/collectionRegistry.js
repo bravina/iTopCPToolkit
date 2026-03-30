@@ -257,7 +257,7 @@ export function inferFieldType(optName) {
   if (/electron/.test(n))                       return 'electrons'
   if (/muon/.test(n))                           return 'muons'
   if (/photon/.test(n))                         return 'photons'
-  if (/\btau\b/.test(n))                        return 'taus'
+  if (/\btaus?\b/.test(n))                        return 'taus'
   if (/\bmet\b|missinget/.test(n))              return 'met'
   if (/\btrack/.test(n))                        return 'tracks'
   return null  // unknown → suggest all containers
@@ -287,7 +287,7 @@ export function getAutocompleteMode(optName, blockName) {
     /electron/.test(n) ||
     /muon/.test(n) ||
     /photon/.test(n) ||
-    /\btau\b/.test(n) ||
+    /\btaus?\b/.test(n) ||
     /\bmet\b|missinget/.test(n) ||
     /\btrack/.test(n) ||
     /container/.test(n) ||
