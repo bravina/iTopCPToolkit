@@ -15,8 +15,7 @@ RUN npm run build
 
 # ── Stage 2: runtime (AnalysisBase + Flask + TopCPToolkit) ───────────────────
 ARG AB_TAG
-ARG TARGETPLATFORM
-FROM --platform=$TARGETPLATFORM gitlab-registry.cern.ch/atlas/athena/analysisbase:${AB_TAG}
+FROM gitlab-registry.cern.ch/atlas/athena/analysisbase:${AB_TAG}
 
 USER root
 SHELL ["/bin/bash", "-c"]
