@@ -5,7 +5,7 @@
 # Jobs:
 #   test-backend   – pytest tests for block_schema structure and Flask routes
 #                    (no Athena needed; runs on a plain ubuntu runner)
-#   test-frontend  – vitest unit tests for all JS utility modules
+#   test-frontend  – vitest unit tests for all JS utility modules + a production build
 #
 # The Athena introspection tests (TestAthenaIntrospection in test_block_schema.py)
 # are automatically skipped here because Athena is not available; they only
@@ -60,3 +60,7 @@ jobs:
       - name: Run frontend tests
         working-directory: frontend
         run: npm test
+
+      - name: Build frontend (catches JSX/import errors)
+        working-directory: frontend
+        run: npm run build
