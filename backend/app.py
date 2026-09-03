@@ -3,53 +3,56 @@ TopCPToolkit GUI – Flask backend.
 
 Endpoints
 ---------
-GET  /api/schema              Full block tree with introspected options
+GET  /api/schema              Introspected block tree (+ TCT catalogue, examples)
 GET  /api/health              Liveness check; reports Athena + version info
-POST /api/export-yaml         Returns YAML content as a downloadable response
+POST /api/introspect          Introspect one hand-entered AddConfigBlocks entry
+GET  /api/examples            List the TopCPToolkit reference configs
+GET  /api/examples/<path>     Content of one reference config
 POST /api/generate-intnote    Runs generateConfigInformation.py on a JSON file,
                               compiles the resulting .tex to PDF, returns both
+
+The schema is built once at startup by walking the live ConfigFactory
+(see introspect.py).  Without Athena, the committed snapshot
+``frontend/src/schema.snapshot.json`` is served instead so the frontend can be
+developed and tested outside the Docker image.
 """
 
 import base64
-import copy
 import glob
+import hashlib
+import json
 import logging
 import os
 import shutil
 import subprocess
 import tempfile
 
-import yaml
-from flask import Flask, jsonify, request, send_from_directory, Response
+from flask import Flask, Response, jsonify, request, send_from_directory
 from flask_cors import CORS
 
-from block_schema import BLOCK_TREE
-from introspect import get_options
+import catalogue
+import introspect
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("app")
 
-_version_file = os.path.join(os.path.dirname(__file__), "..", "VERSION")
-APP_VERSION = open(_version_file).read().strip()
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+APP_VERSION = open(os.path.join(REPO_ROOT, "VERSION")).read().strip()
 
-STATIC_DIR = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
-app = Flask(__name__, static_folder=STATIC_DIR if os.path.isdir(STATIC_DIR) else None)
-CORS(app)
-
-_schema_cache = None
+STATIC_DIR = os.path.join(REPO_ROOT, "frontend", "dist")
+SNAPSHOT_PATH = os.environ.get(
+    "SCHEMA_SNAPSHOT", os.path.join(REPO_ROOT, "frontend", "src", "schema.snapshot.json"))
 
 # Path to the ConfigDocumentation script kept from the TCT source tree
 _INTNOTE_SCRIPT = "/opt/TopCPToolkit/ConfigDocumentation/generateConfigInformation.py"
 
+app = Flask(__name__, static_folder=STATIC_DIR if os.path.isdir(STATIC_DIR) else None)
+CORS(app)
 
-def _build_schema():
-    def enrich(block):
-        b = copy.deepcopy(block)
-        b["options"] = get_options(b["class_path"], b["is_function"])
-        b["sub_blocks"] = [enrich(sb) for sb in b["sub_blocks"]]
-        return b
-    return [enrich(b) for b in BLOCK_TREE]
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Version / environment probes
+# ─────────────────────────────────────────────────────────────────────────────
 
 def _get_ab_version():
     """Try to determine the AnalysisBase release version."""
@@ -65,73 +68,180 @@ def _get_ab_version():
 
 def _get_tct_version():
     """Read the TopCPToolkit version written by the Dockerfile build step."""
-    marker = "/opt/tct_version.txt"
     try:
-        version = open(marker).read().strip()
+        version = open("/opt/tct_version.txt").read().strip()
         return None if version == "none" else version
     except FileNotFoundError:
         return None
 
 
 def _pdflatex_available():
-    """Return True if pdflatex is on PATH."""
     return shutil.which("pdflatex") is not None
 
 
-def _intnote_available():
-    """Return True if both the TCT script and pdflatex are present."""
-    return os.path.isfile(_INTNOTE_SCRIPT) and _pdflatex_available()
+def _versions():
+    return {
+        "app": APP_VERSION,
+        "ab": _get_ab_version(),
+        "tct": _get_tct_version(),
+        "athena": introspect.athena_available(),
+        "pdflatex": _pdflatex_available(),
+    }
 
 
-@app.before_request
-def _warm_schema():
-    global _schema_cache
+# ─────────────────────────────────────────────────────────────────────────────
+# Schema construction + cache
+# ─────────────────────────────────────────────────────────────────────────────
+
+EMPTY_SCHEMA = {
+    "categories": list(introspect.CATEGORY_ORDER),
+    "blocks": [], "catalogue": [], "examples": [], "keywords": None,
+}
+
+
+def _load_snapshot():
+    try:
+        with open(SNAPSHOT_PATH, encoding="utf-8") as fh:
+            data = json.load(fh)
+        if isinstance(data, dict) and isinstance(data.get("blocks"), list):
+            return data
+        logger.warning("Snapshot %s has an unexpected shape — ignored", SNAPSHOT_PATH)
+    except FileNotFoundError:
+        pass
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Cannot read snapshot %s: %s", SNAPSHOT_PATH, exc)
+    return None
+
+
+def build_full_schema(include_example_content=False):
+    """
+    Assemble everything the frontend needs in one document.
+
+    ``source`` tells the frontend where the data came from:
+      athena   – live introspection inside the image
+      snapshot – committed schema.snapshot.json (dev mode)
+      none     – neither available; empty schema
+    """
+    if introspect.athena_available():
+        schema = introspect.build_schema()
+        data_dir = catalogue.find_tct_data_dir()
+        schema["catalogue"] = catalogue.build_catalogue(data_dir)
+        schema["examples"] = catalogue.list_examples(data_dir)
+        if include_example_content:
+            for ex in schema["examples"]:
+                ex["content"] = catalogue.read_example(data_dir, ex["path"])
+        # Filled in once EventSelectionConfig exposes its keyword spec upstream
+        schema["keywords"] = None
+        schema["source"] = "athena"
+        schema["snapshotVersions"] = None
+    else:
+        snapshot = _load_snapshot()
+        if snapshot is not None:
+            schema = dict(snapshot)
+            schema["source"] = "snapshot"
+            schema["snapshotVersions"] = snapshot.get("versions")
+        else:
+            schema = json.loads(json.dumps(EMPTY_SCHEMA))
+            schema["source"] = "none"
+            schema["snapshotVersions"] = None
+    schema["versions"] = _versions()
+    return schema
+
+
+_schema_cache = None
+_schema_json = None
+_schema_etag = None
+
+
+def reset_schema_cache():
+    global _schema_cache, _schema_json, _schema_etag
+    _schema_cache = _schema_json = _schema_etag = None
+
+
+def get_schema():
+    global _schema_cache, _schema_json, _schema_etag
     if _schema_cache is None:
-        logger.info("Building schema (first request)…")
-        _schema_cache = _build_schema()
-        logger.info("Schema ready – %d top-level blocks", len(_schema_cache))
+        logger.info("Building schema…")
+        _schema_cache = build_full_schema()
+        _schema_json = json.dumps(_schema_cache, ensure_ascii=False)
+        _schema_etag = '"' + hashlib.sha1(_schema_json.encode("utf-8")).hexdigest() + '"'
+        n_err = sum(1 for b in _schema_cache["blocks"] if b.get("error"))
+        n_err += sum(1 for e in _schema_cache["catalogue"] if e.get("block", {}).get("error"))
+        logger.info("Schema ready (%s) – %d blocks, %d catalogue entries, %d with errors",
+                    _schema_cache["source"], len(_schema_cache["blocks"]),
+                    len(_schema_cache["catalogue"]), n_err)
+    return _schema_cache
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Routes
+# ─────────────────────────────────────────────────────────────────────────────
 
 @app.route("/api/health")
 def health():
-    try:
-        import AthenaCommon  # noqa: F401
-        athena_ok = True
-    except ImportError:
-        athena_ok = False
+    v = _versions()
     return jsonify({
         "status": "ok",
-        "athena": athena_ok,
-        "app_version": APP_VERSION,
-        "ab_version": _get_ab_version(),
-        "tct_version": _get_tct_version(),
-        "pdflatex": _pdflatex_available(),
+        "athena": v["athena"],
+        "app_version": v["app"],
+        "ab_version": v["ab"],
+        "tct_version": v["tct"],
+        "pdflatex": v["pdflatex"],
+        "schema_source": get_schema()["source"],
     })
 
 
 @app.route("/api/schema")
 def schema():
-    return jsonify(_schema_cache)
+    get_schema()
+    if request.headers.get("If-None-Match") == _schema_etag:
+        return Response(status=304, headers={"ETag": _schema_etag})
+    return Response(_schema_json, mimetype="application/json",
+                    headers={"ETag": _schema_etag, "Cache-Control": "no-cache"})
 
 
-@app.route("/api/export-yaml", methods=["POST"])
-def export_yaml():
-    """Return the YAML as a file download — no server-side writing needed."""
-    payload = request.get_json(force=True)
-    config = payload.get("config", {})
-    filename = payload.get("filename", "analysis_config.yaml")
+@app.route("/api/introspect", methods=["POST"])
+def introspect_entry():
+    """
+    Introspect a user-supplied AddConfigBlocks entry
+    ``{modulePath, functionName, algName, pos?, superBlocks?}`` and return its
+    schema block.  Only modules already installed in the image can be imported —
+    the same trust level as running the YAML itself.
+    """
+    if not introspect.athena_available():
+        return jsonify({"error": "Athena not available — cannot introspect custom blocks"}), 503
+    payload = request.get_json(force=True, silent=True) or {}
+    missing = [k for k in catalogue.ENTRY_KEYS if not isinstance(payload.get(k), str) or not payload[k]]
+    if missing:
+        return jsonify({"error": f"Missing or invalid fields: {', '.join(missing)}"}), 400
+    entry = {k: payload[k] for k in catalogue.ENTRY_KEYS}
+    entry["pos"] = payload.get("pos")
+    entry["superBlocks"] = payload.get("superBlocks")
+    block = catalogue.introspect_entry(entry)
+    if block.get("error"):
+        return jsonify({"error": block["error"], "block": block}), 400
+    return jsonify({"entry": entry, "block": block})
 
-    content = yaml.dump(config, default_flow_style=False, sort_keys=False,
-                        allow_unicode=True)
 
-    return Response(
-        content,
-        mimetype="application/x-yaml",
-        headers={
-            "Content-Disposition": f"attachment; filename={filename}",
-            "Content-Type": "application/x-yaml",
-        },
-    )
+@app.route("/api/examples")
+def examples():
+    return jsonify([{"path": e["path"], "name": e["name"]} for e in get_schema()["examples"]])
+
+
+@app.route("/api/examples/<path:rel_path>")
+def example_content(rel_path):
+    sch = get_schema()
+    content = None
+    if sch["source"] == "athena":
+        content = catalogue.read_example(catalogue.find_tct_data_dir(), rel_path)
+    else:
+        for ex in sch["examples"]:
+            if ex["path"] == rel_path:
+                content = ex.get("content")
+                break
+    if content is None:
+        return jsonify({"error": f"Unknown example '{rel_path}'"}), 404
+    return Response(content, mimetype="application/x-yaml")
 
 
 @app.route("/api/generate-intnote", methods=["POST"])
@@ -146,7 +256,6 @@ def generate_intnote():
         sections  – comma-separated list of sections, e.g. "muon,jet,met"
                     (optional; omit to generate all sections)
     """
-    # ── Availability checks ──────────────────────────────────────────────────
     if not os.path.isfile(_INTNOTE_SCRIPT):
         return jsonify({
             "error": "TopCPToolkit not available — generateConfigInformation.py not found. "
@@ -154,37 +263,27 @@ def generate_intnote():
         }), 400
 
     if not _pdflatex_available():
-        return jsonify({
-            "error": "pdflatex not found. Rebuild the image with texlive installed.",
-        }), 400
+        return jsonify({"error": "pdflatex not found. Rebuild the image with texlive installed."}), 400
 
-    # ── Input validation ─────────────────────────────────────────────────────
     json_file = request.files.get("json")
     if not json_file:
         return jsonify({"error": "No JSON file provided"}), 400
 
     sections = request.form.get("sections", "").strip()
 
-    # ── Run in a temp directory ──────────────────────────────────────────────
     with tempfile.TemporaryDirectory() as tmpdir:
         json_path = os.path.join(tmpdir, "config.json")
-        tex_path  = os.path.join(tmpdir, "output.tex")
+        tex_path = os.path.join(tmpdir, "output.tex")
         json_file.save(json_path)
 
-        # 1. Run the TopCPToolkit script
         cmd = ["python3", _INTNOTE_SCRIPT, json_path, "-o", tex_path]
         if sections:
             cmd += ["--sections", sections]
 
         logger.info("Running: %s", " ".join(cmd))
         try:
-            script_result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=120,
-                cwd=tmpdir,
-            )
+            script_result = subprocess.run(cmd, capture_output=True, text=True,
+                                           timeout=120, cwd=tmpdir)
         except subprocess.TimeoutExpired:
             return jsonify({"error": "Script timed out after 120 s"}), 400
 
@@ -194,57 +293,39 @@ def generate_intnote():
         if script_result.returncode != 0:
             return jsonify({
                 "error": "generateConfigInformation.py exited with an error",
-                "stdout": script_stdout,
-                "stderr": script_stderr,
+                "stdout": script_stdout, "stderr": script_stderr,
             }), 400
 
         if not os.path.exists(tex_path):
             return jsonify({
                 "error": "Script succeeded but produced no output file",
-                "stdout": script_stdout,
-                "stderr": script_stderr,
+                "stdout": script_stdout, "stderr": script_stderr,
             }), 400
 
         with open(tex_path, encoding="utf-8", errors="replace") as fh:
             tex_content = fh.read()
 
-        # 2. Compile to PDF with pdflatex
         logger.info("Compiling PDF with pdflatex…")
         try:
             pdf_env = os.environ.copy()
-            pdf_env["HOME"]        = tmpdir  # pdflatex writes format cache to $HOME/.texlive*
-            pdf_env["TEXMFVAR"]    = tmpdir  # explicit override for OpenShift non-root UIDs
+            pdf_env["HOME"] = tmpdir          # pdflatex writes format cache to $HOME/.texlive*
+            pdf_env["TEXMFVAR"] = tmpdir      # explicit override for OpenShift non-root UIDs
             pdf_env["TEXMFCONFIG"] = tmpdir
             pdf_result = subprocess.run(
-                [
-                    "pdflatex",
-                    "-interaction=nonstopmode",
-                    "-output-directory", tmpdir,
-                    tex_path,
-                ],
-                capture_output=True,
-                text=True,
-                timeout=120,
-                cwd=tmpdir,
-                env=pdf_env,
+                ["pdflatex", "-interaction=nonstopmode", "-output-directory", tmpdir, tex_path],
+                capture_output=True, text=True, timeout=120, cwd=tmpdir, env=pdf_env,
             )
         except subprocess.TimeoutExpired:
             return jsonify({
                 "error": "pdflatex timed out after 120 s",
-                "tex": tex_content,
-                "stdout": script_stdout,
-                "stderr": script_stderr,
+                "tex": tex_content, "stdout": script_stdout, "stderr": script_stderr,
             }), 400
 
-        # pdflatex names the PDF after the input filename (output.pdf)
         pdf_path = os.path.join(tmpdir, "output.pdf")
-
         if not os.path.exists(pdf_path):
             return jsonify({
                 "error": "pdflatex failed to produce a PDF",
-                "tex": tex_content,
-                "stdout": script_stdout,
-                "stderr": script_stderr,
+                "tex": tex_content, "stdout": script_stdout, "stderr": script_stderr,
                 "pdf_log": pdf_result.stdout + "\n" + pdf_result.stderr,
             }), 400
 
@@ -253,9 +334,7 @@ def generate_intnote():
 
         return jsonify({
             "pdf": base64.b64encode(pdf_bytes).decode(),
-            "tex": tex_content,
-            "stdout": script_stdout,
-            "stderr": script_stderr,
+            "tex": tex_content, "stdout": script_stdout, "stderr": script_stderr,
         })
 
 
@@ -271,5 +350,6 @@ def serve_frontend(path):
 
 
 if __name__ == "__main__":
+    get_schema()  # build eagerly so the first request is fast and errors show in the log
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)
