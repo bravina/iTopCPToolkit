@@ -24,7 +24,7 @@ const SCHEMA = [
       { name: 'containerName', type: 'str', default: 'AnaJets' },
       { name: 'runNNJvtUpdate', type: 'bool', default: false },
     ],
-    sub_blocks: [
+    subBlocks: [
       {
         name: 'JVT',
         label: 'JVT',
@@ -36,7 +36,7 @@ const SCHEMA = [
     name: 'Electrons',
     label: 'Electrons',
     options: [{ name: 'containerName', type: 'str', default: 'AnaElectrons' }],
-    sub_blocks: [],
+    subBlocks: [],
   },
 ]
 

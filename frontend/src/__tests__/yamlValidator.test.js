@@ -1,157 +1,123 @@
-// frontend/src/__tests__/yamlValidator.test.js
-//
-// Tests for yamlValidator.js.
-//
-// Fully automatic: the schema is the source of truth, and we construct
-// inputs that are either valid or deliberately invalid — no hardcoded
-// expected message strings (we check severity and path structure instead).
-
 import { describe, it, expect } from 'vitest'
-import { validateConfig, buildIssueMap } from '../utils/yamlValidator.js'
+import { validateConfig, buildIssueMap, matchesExpertRule } from '../utils/yamlValidator.js'
+import { effectiveBlocks, customEntryFromCatalogue } from '../utils/schema.js'
+import { resolveCustomEntriesSync } from '../utils/yamlToConfig.js'
+import { SCHEMA, CATALOGUE } from './fixtures/schema.js'
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Schema fixture
-// ─────────────────────────────────────────────────────────────────────────────
+function validate(obj) {
+  return validateConfig(obj, effectiveBlocks(SCHEMA.blocks, resolveCustomEntriesSync(obj, SCHEMA)))
+}
+const msgs = issues => issues.map(i => `${i.severity}:${i.path}:${i.message}`)
 
-const SCHEMA = [
-  {
-    name: 'Jets',
-    options: [
-      { name: 'containerName',  type: 'str',  default: 'AnaJets', required: false, noneAction: 'ignore' },
-      { name: 'runNNJvtUpdate', type: 'bool', default: false,      required: false, noneAction: 'ignore' },
-    ],
-    sub_blocks: [
-      {
-        name: 'JVT',
-        options: [
-          { name: 'selectionName', type: 'str', default: 'baselineJvt', required: false, noneAction: 'ignore' },
-        ],
-      },
-    ],
-  },
-  {
-    name: 'EventSelection',
-    options: [
-      { name: 'selectionCutsDict', type: 'str', default: null, required: true, noneAction: 'error' },
-    ],
-    sub_blocks: [],
-  },
-]
-
-// ─────────────────────────────────────────────────────────────────────────────
-// validateConfig
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe('validateConfig — valid configs', () => {
-  it('known block with known options produces no issues', () => {
-    const issues = validateConfig({ Jets: [{ containerName: 'AnaJets' }] }, SCHEMA)
-    expect(issues).toHaveLength(0)
-  })
-
-  it('empty block produces no issues', () => {
-    const issues = validateConfig({ Jets: [{}] }, SCHEMA)
-    expect(issues).toHaveLength(0)
-  })
-
-  it('dict-style block (not array) produces no issues', () => {
-    const issues = validateConfig({ Jets: { containerName: 'AnaJets' } }, SCHEMA)
-    expect(issues).toHaveLength(0)
-  })
-
-  it('known sub-block with known options produces no issues', () => {
-    const issues = validateConfig(
-      { Jets: [{ JVT: { selectionName: 'baselineJvt' } }] },
-      SCHEMA
-    )
-    expect(issues).toHaveLength(0)
-  })
-})
-
-describe('validateConfig — unknown keys', () => {
-  it('unknown top-level block is an error', () => {
-    const issues = validateConfig({ UnknownBlock: {} }, SCHEMA)
-    expect(issues).toHaveLength(1)
-    expect(issues[0].severity).toBe('error')
-    expect(issues[0].path).toBe('UnknownBlock')
-  })
-
-  it('unknown option key is an error', () => {
-    const issues = validateConfig({ Jets: [{ unknownOption: 'value' }] }, SCHEMA)
-    expect(issues.some(i => i.severity === 'error' && i.path.includes('unknownOption'))).toBe(true)
-  })
-
-  it('unknown key in sub-block is an error', () => {
-    const issues = validateConfig(
-      { Jets: [{ JVT: { unknownSubOpt: 'value' } }] },
-      SCHEMA
-    )
-    expect(issues.some(i => i.severity === 'error' && i.path.includes('unknownSubOpt'))).toBe(true)
-  })
-})
-
-describe('validateConfig — type mismatches', () => {
-  it('string where bool expected is a warning', () => {
-    const issues = validateConfig({ Jets: [{ runNNJvtUpdate: 'yes' }] }, SCHEMA)
-    expect(issues.some(i => i.severity === 'warning' && i.path.includes('runNNJvtUpdate'))).toBe(true)
-  })
-
-  it('correct bool type produces no warning', () => {
-    const issues = validateConfig({ Jets: [{ runNNJvtUpdate: true }] }, SCHEMA)
-    expect(issues.filter(i => i.path.includes('runNNJvtUpdate'))).toHaveLength(0)
-  })
-
-  it('null value is not flagged (treated as absent)', () => {
-    const issues = validateConfig({ Jets: [{ containerName: null }] }, SCHEMA)
-    expect(issues.filter(i => i.path.includes('containerName'))).toHaveLength(0)
-  })
-})
-
-describe('validateConfig — required options', () => {
-  it('missing required option produces a warning', () => {
-    // EventSelection requires selectionCutsDict
-    const issues = validateConfig({ EventSelection: {} }, SCHEMA)
-    expect(issues.some(i => i.path.includes('selectionCutsDict'))).toBe(true)
-  })
-
-  it('present required option produces no warning', () => {
-    const issues = validateConfig(
-      { EventSelection: { selectionCutsDict: { signal: 'EL_N 25000 >= 1\nSAVE\n' } } },
-      SCHEMA
-    )
-    expect(issues.filter(i => i.path.includes('selectionCutsDict'))).toHaveLength(0)
-  })
-})
-
-describe('validateConfig — never throws', () => {
-  const oddInputs = [
-    null, undefined, {}, { Jets: null }, { Jets: [null] },
-    { Jets: [{ containerName: undefined }] },
-    { Jets: 42 },
-  ]
-  for (const input of oddInputs) {
-    it(`does not throw for input: ${JSON.stringify(input)}`, () => {
-      expect(() => validateConfig(input, SCHEMA)).not.toThrow()
+describe('validateConfig', () => {
+  it('accepts a clean config', () => {
+    const issues = validate({
+      CommonServices: { runSystematics: false },
+      Jets: [{ containerName: 'AnaJets', JVT: {}, PtEtaSelection: [{ minPt: 25000 }] }],
+      Output: { treeName: 'reco', vars: ['a'] },
     })
-  }
+    expect(issues).toEqual([])
+  })
+
+  it('flags unknown blocks and unused options with errors', () => {
+    const issues = validate({ Nope: {}, Jets: { containerName: 'A', bogus: 1, JVT: { alsoBogus: 2 } } })
+    expect(msgs(issues)).toContain("error:Nope:Unknown block 'Nope' — not in the factory and not declared in AddConfigBlocks")
+    expect(msgs(issues)).toContain("error:Jets[0].bogus:Option 'bogus' is not used by block 'Jets'")
+    expect(msgs(issues)).toContain("error:Jets[0].JVT[0].alsoBogus:Option 'alsoBogus' is not used by block 'JVT'")
+  })
+
+  it('warns on type mismatches and values outside choices', () => {
+    const issues = validate({ Jets: { containerName: 'A', minPt: 'high', runJvtSelection: 'yes', ptCuts: 3, systematicsModelJES: 'Bogus' } })
+    const m = msgs(issues)
+    expect(m).toContain('warning:Jets[0].minPt:Expected float, got string')
+    expect(m).toContain('warning:Jets[0].runJvtSelection:Expected bool, got string')
+    expect(m).toContain('warning:Jets[0].ptCuts:Expected list, got number')
+    expect(m).toContain("warning:Jets[0].systematicsModelJES:'Bogus' is not one of: All, Category")
+    expect(issues.every(i => i.severity === 'warning')).toBe(true)
+  })
+
+  it('warns about missing required options, but not for inherited ones in sub-blocks', () => {
+    const issues = validate({ Jets: { JVT: {} }, Electrons: { containerName: 'E', WorkingPoint: {} } })
+    const m = msgs(issues)
+    expect(m).toContain("warning:Jets[0].containerName:Required option 'containerName' is not set")
+    expect(m).toContain("warning:Electrons[0].WorkingPoint[0].selectionName:Required option 'selectionName' is not set")
+    expect(m.some(x => x.includes('JVT[0].containerName'))).toBe(false)
+  })
+
+  it('warns on expert-mode values and names the runtime flag', () => {
+    const issues = validate({ CommonServices: { systematicsHistogram: 'h', propertyOverrides: { 'a.b': 1 } } })
+    expect(issues).toHaveLength(2)
+    expect(issues[0].message).toMatch(/CommonServices\.enableExpertMode/)
+  })
+
+  it('warns on deprecated SAVE lines', () => {
+    const issues = validate({ EventSelection: { selectionName: 's', selectionCuts: 'EL_N 25000 >= 1\nSAVE\n' } })
+    expect(msgs(issues)).toContain("warning:EventSelection[0].selectionCuts:'SAVE' is deprecated — the event filter is created automatically; remove the SAVE line")
+  })
+
+  it('checks AddConfigBlocks entries and validates custom blocks through the catalogue', () => {
+    const issues = validate({
+      AddConfigBlocks: [
+        { modulePath: 'TopCPToolkit.TutorialConfig', functionName: 'TutorialConfig', algName: 'Tutorial' },
+        { algName: 'broken' },
+      ],
+      Tutorial: { tutorialOption: 'x', nope: 1 },
+    })
+    const m = msgs(issues)
+    expect(m).toContain('error:AddConfigBlocks[1]:AddConfigBlocks entry needs modulePath, functionName and algName')
+    expect(m).toContain('warning:Tutorial[0].tutorialOption:Expected int, got string')
+    expect(m).toContain("error:Tutorial[0].nope:Option 'nope' is not used by block 'Tutorial'")
+  })
+
+  it('does not check options of opaque custom blocks, but says so', () => {
+    const issues = validate({
+      AddConfigBlocks: [{ modulePath: 'Unknown.Mod', functionName: 'X', algName: 'Custom' }],
+      Custom: { anything: 1 },
+    })
+    expect(issues).toHaveLength(1)
+    expect(issues[0].severity).toBe('warning')
+    expect(issues[0].message).toMatch(/cannot be checked/)
+  })
+
+  it('reports non-mapping instances', () => {
+    const issues = validate({ Jets: ['oops'], Electrons: { containerName: 'E', WorkingPoint: [5] } })
+    expect(msgs(issues)).toContain('error:Jets[0]:Block instance must be a mapping, got string')
+    expect(msgs(issues)).toContain('error:Electrons[0].WorkingPoint[0]:Sub-block instance must be a mapping, got number')
+  })
+
+  it('warns when a required dependency block is absent', () => {
+    const blocks = effectiveBlocks(SCHEMA.blocks, [customEntryFromCatalogue({
+      ...CATALOGUE[0], algName: 'Needy',
+      block: { ...CATALOGUE[0].block, name: 'Needy', dependencies: [{ blockName: 'Jets', required: true }] },
+    })])
+    const issues = validateConfig({ Needy: {} }, blocks)
+    expect(msgs(issues)).toContain("warning:Needy:'Needy' requires block 'Jets', which is not present")
+    expect(validateConfig({ Needy: {}, Jets: { containerName: 'A' } }, blocks)).toEqual([])
+  })
+
+  it('never throws on junk input', () => {
+    expect(() => validate(null)).not.toThrow()
+    expect(() => validate({ AddConfigBlocks: 'x', Jets: 5 })).not.toThrow()
+  })
 })
 
-// ─────────────────────────────────────────────────────────────────────────────
-// buildIssueMap
-// ─────────────────────────────────────────────────────────────────────────────
+describe('matchesExpertRule', () => {
+  it('handles markers, literals and the "any deviation" rule', () => {
+    const opt = { default: 'd' }
+    expect(matchesExpertRule(true, 'd', opt)).toBe(false)
+    expect(matchesExpertRule(true, 'x', opt)).toBe(true)
+    expect(matchesExpertRule('nonemptystring', 'x')).toBe(true)
+    expect(matchesExpertRule('nonemptylist', [])).toBe(false)
+    expect(matchesExpertRule('positiveint', 3)).toBe(true)
+    expect(matchesExpertRule('Loose', 'Loose')).toBe(true)
+    expect(matchesExpertRule(5, '5')).toBe(true)
+  })
+})
 
 describe('buildIssueMap', () => {
-  it('groups issues by path', () => {
-    const issues = [
-      { path: 'Jets[0].foo', severity: 'error',   message: 'a' },
-      { path: 'Jets[0].foo', severity: 'warning',  message: 'b' },
-      { path: 'Jets[0].bar', severity: 'warning',  message: 'c' },
-    ]
-    const map = buildIssueMap(issues)
-    expect(map['Jets[0].foo']).toHaveLength(2)
-    expect(map['Jets[0].bar']).toHaveLength(1)
-  })
-
-  it('returns empty map for empty issues', () => {
-    expect(buildIssueMap([])).toEqual({})
+  it('groups by path', () => {
+    const map = buildIssueMap([{ path: 'a', m: 1 }, { path: 'a', m: 2 }, { path: 'b', m: 3 }])
+    expect(map.a).toHaveLength(2)
+    expect(map.b).toHaveLength(1)
   })
 })

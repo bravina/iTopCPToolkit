@@ -1,271 +1,104 @@
-// frontend/src/__tests__/collectionRegistry.test.js
-//
-// Tests for collectionRegistry.js.
-//
-// The two public builders (fromState / fromYaml) are tested for equivalence:
-// given the same logical config expressed in both formats, they must produce
-// identical registries. This is the key invariant that prevents the Reader
-// and Builder modes from diverging.
-
 import { describe, it, expect } from 'vitest'
 import {
-  buildRegistryFromState,
-  buildRegistryFromYaml,
-  inferFieldType,
-  getAutocompleteMode,
-  DEFINING_BLOCK_TYPES,
+  buildRegistryFromState, buildRegistryFromYaml, inferFieldType, optionRole, getAutocompleteMode,
 } from '../utils/collectionRegistry.js'
+import { checkDepsFromState, checkDepsFromYaml, looksLikeContainerRef } from '../utils/dependencyChecker.js'
+import { yamlToConfigSync } from '../utils/yamlToConfig.js'
+import { SCHEMA, findBlock, opt } from './fixtures/schema.js'
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Schema fixture
-// ─────────────────────────────────────────────────────────────────────────────
-
-const SCHEMA = [
-  {
-    name: 'Jets',
-    options: [{ name: 'containerName', default: 'AnaJets' }],
-    sub_blocks: [
-      {
-        name: 'JVT',
-        options: [{ name: 'selectionName', default: 'baselineJvt' }],
-      },
-      {
-        name: 'WorkingPoint',
-        options: [{ name: 'selectionName', default: '' }],
-      },
-    ],
-  },
-  {
-    name: 'Electrons',
-    options: [{ name: 'containerName', default: 'AnaElectrons' }],
-    sub_blocks: [
-      {
-        name: 'WorkingPoint',
-        options: [{ name: 'selectionName', default: '' }],
-      },
-    ],
-  },
-  {
-    name: 'Thinning',
-    options: [
-      { name: 'containerName', default: '' },
-      { name: 'outputName',    default: '' },
-    ],
-    sub_blocks: [],
-  },
-]
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Helpers to build minimal state / YAML representations of the same config
-// ─────────────────────────────────────────────────────────────────────────────
-
-function makeJetsState(containerName = 'AnaJets', jvtEnabled = false, wpSelection = null) {
-  return {
-    Jets: {
-      enabled: true,
-      instances: [{
-        _id: 'i1',
-        options: { containerName },
-        sub_blocks: {
-          JVT: {
-            enabled: jvtEnabled,
-            instances: [{ _id: 's1', options: {} }],
-          },
-          WorkingPoint: {
-            enabled: wpSelection !== null,
-            instances: [{ _id: 's2', options: wpSelection ? { selectionName: wpSelection } : {} }],
-          },
-        },
-      }],
-    },
-  }
+const YAML = {
+  Jets: [{ containerName: 'AnaJets', JVT: {}, PtEtaSelection: [{ selectionName: 'tight', minPt: 30000 }] }],
+  Electrons: { containerName: 'AnaElectrons', WorkingPoint: [{ selectionName: 'loose' }, { selectionName: 'tight' }] },
+  PtEtaSelection: { containerName: 'AnaElectrons', selectionName: 'pt50', minPt: 50000 },
+  Thinning: { containerName: 'AnaJets', outputName: 'OutJets' },
+  OverlapRemoval: { electrons: 'AnaElectrons.loose', jets: 'AnaJets.jvt', muons: 'AnaMuons' },
+  EventSelection: { selectionName: 'sel', electrons: 'AnaElectrons.medium', selectionCuts: 'x' },
 }
-
-function makeJetsYaml(containerName = 'AnaJets', jvtPresent = false, wpSelection = null) {
-  const inst = { containerName }
-  if (jvtPresent) inst.JVT = {}
-  if (wpSelection) inst.WorkingPoint = { selectionName: wpSelection }
-  return { Jets: [inst] }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// buildRegistryFromState
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe('buildRegistryFromState', () => {
-  it('disabled block produces no collections', () => {
-    const state = { Jets: { enabled: false, instances: [] } }
-    const reg = buildRegistryFromState(state, SCHEMA)
-    expect(reg.collections).toHaveLength(0)
-  })
-
-  it('enabled Jets block registers a jets collection', () => {
-    const reg = buildRegistryFromState(makeJetsState(), SCHEMA)
-    expect(reg.collections).toHaveLength(1)
-    expect(reg.collections[0]).toMatchObject({ name: 'AnaJets', type: 'jets' })
-  })
-
-  it('JVT sub-block adds baselineJvt selection implicitly', () => {
-    const reg = buildRegistryFromState(makeJetsState('AnaJets', true), SCHEMA)
-    expect(reg.selections.some(s => s.name === 'baselineJvt' && s.container === 'AnaJets')).toBe(true)
-    expect(reg.withSelections).toContain('AnaJets.baselineJvt')
-  })
-
-  it('WorkingPoint sub-block adds named selection', () => {
-    const reg = buildRegistryFromState(makeJetsState('AnaJets', false, 'tight'), SCHEMA)
-    expect(reg.selections.some(s => s.name === 'tight' && s.container === 'AnaJets')).toBe(true)
-  })
-
-  it('byType index is populated', () => {
-    const reg = buildRegistryFromState(makeJetsState(), SCHEMA)
-    expect(reg.byType.jets).toBeDefined()
-    expect(reg.byType.jets[0].name).toBe('AnaJets')
-  })
-
-  it('same container name is not registered twice', () => {
-    const state = {
-      Jets: {
-        enabled: true,
-        instances: [
-          { _id: 'i1', options: { containerName: 'AnaJets' }, sub_blocks: { JVT: { enabled: false, instances: [] }, WorkingPoint: { enabled: false, instances: [] } } },
-          { _id: 'i2', options: { containerName: 'AnaJets' }, sub_blocks: { JVT: { enabled: false, instances: [] }, WorkingPoint: { enabled: false, instances: [] } } },
-        ],
-      },
-    }
-    const reg = buildRegistryFromState(state, SCHEMA)
-    expect(reg.collections.filter(c => c.name === 'AnaJets')).toHaveLength(1)
-  })
-})
-
-// ─────────────────────────────────────────────────────────────────────────────
-// buildRegistryFromYaml
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe('buildRegistryFromYaml', () => {
-  it('Jets YAML registers a jets collection', () => {
-    const reg = buildRegistryFromYaml(makeJetsYaml(), SCHEMA)
-    expect(reg.collections[0]).toMatchObject({ name: 'AnaJets', type: 'jets' })
-  })
-
-  it('JVT key in YAML adds WorkingPoint selection via sub-block', () => {
-    const reg = buildRegistryFromYaml(makeJetsYaml('AnaJets', false, 'tight'), SCHEMA)
-    expect(reg.selections.some(s => s.name === 'tight')).toBe(true)
-  })
-})
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Equivalence: fromState and fromYaml must agree
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe('fromState vs fromYaml equivalence', () => {
-  it('plain Jets block: same collections', () => {
-    const stateReg = buildRegistryFromState(makeJetsState('MyJets'), SCHEMA)
-    const yamlReg  = buildRegistryFromYaml(makeJetsYaml('MyJets'), SCHEMA)
-    expect(stateReg.collections.map(c => c.name).sort())
-      .toEqual(yamlReg.collections.map(c => c.name).sort())
-  })
-
-  it('Jets+WorkingPoint: same selections', () => {
-    const stateReg = buildRegistryFromState(makeJetsState('AnaJets', false, 'tight'), SCHEMA)
-    const yamlReg  = buildRegistryFromYaml(makeJetsYaml('AnaJets', false, 'tight'), SCHEMA)
-    const stateNames = stateReg.selections.map(s => `${s.container}.${s.name}`).sort()
-    const yamlNames  = yamlReg.selections.map(s => `${s.container}.${s.name}`).sort()
-    expect(stateNames).toEqual(yamlNames)
-  })
-})
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Thinning outputName
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe('Thinning outputName', () => {
-  it('creates an output container from YAML', () => {
-    const reg = buildRegistryFromYaml(
-      {
-        Jets:    [{ containerName: 'AnaJets' }],
-        Thinning:[{ containerName: 'AnaJets', outputName: 'OutJets' }],
-      },
-      SCHEMA
-    )
-    expect(reg.collections.some(c => c.name === 'OutJets')).toBe(true)
-  })
-
-  it('output container inherits the source type', () => {
-    const reg = buildRegistryFromYaml(
-      {
-        Jets:    [{ containerName: 'AnaJets' }],
-        Thinning:[{ containerName: 'AnaJets', outputName: 'OutJets' }],
-      },
-      SCHEMA
-    )
-    const out = reg.collections.find(c => c.name === 'OutJets')
-    expect(out.type).toBe('jets')
-  })
-})
-
-// ─────────────────────────────────────────────────────────────────────────────
-// inferFieldType
-// ─────────────────────────────────────────────────────────────────────────────
 
 describe('inferFieldType', () => {
-  const cases = [
-    ['jets',       ['jets', 'inputJets', 'largeRjets', 'ljetContainer']],
-    ['electrons',  ['electrons', 'inputElectrons']],
-    ['muons',      ['muons', 'inputMuons']],
-    ['photons',    ['photons', 'inputPhotons']],
-    ['taus',       ['taus', 'tau']],
-    ['met',        ['met', 'missingET']],
-    ['tracks',     ['tracks', 'track']],
-    [null,         ['selectionName', 'btagger', 'someRandomOption']],
-  ]
-  for (const [expectedType, optNames] of cases) {
-    for (const optName of optNames) {
-      it(`"${optName}" → ${expectedType}`, () => {
-        expect(inferFieldType(optName)).toBe(expectedType)
-      })
-    }
-  }
-})
-
-// ─────────────────────────────────────────────────────────────────────────────
-// getAutocompleteMode
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe('getAutocompleteMode', () => {
-  it('outputName → null (never a reference)', () => {
-    expect(getAutocompleteMode('outputName', 'Thinning')).toBeNull()
-  })
-
-  it('containerName in a defining block → null', () => {
-    // Jets is in DEFINING_BLOCK_TYPES, so containerName is an invented name
-    expect(getAutocompleteMode('containerName', 'Jets')).toBeNull()
-  })
-
-  it('containerName in a non-defining block → autocomplete', () => {
-    expect(getAutocompleteMode('containerName', 'OverlapRemoval')).toBe('collections+selections')
-  })
-
-  it('jets option → autocomplete', () => {
-    expect(getAutocompleteMode('jets', 'OverlapRemoval')).toBe('collections+selections')
-  })
-
-  it('electrons option → autocomplete', () => {
-    expect(getAutocompleteMode('electrons', 'OverlapRemoval')).toBe('collections+selections')
-  })
-
-  it('unrelated option name → null', () => {
-    expect(getAutocompleteMode('debugMode', 'EventSelection')).toBeNull()
+  it('maps names to object types with taus checked before jets', () => {
+    expect(inferFieldType('Jets')).toBe('jets')
+    expect(inferFieldType('PL_Jets')).toBe('jets')
+    expect(inferFieldType('TauJets')).toBe('taus')
+    expect(inferFieldType('DiTauJets')).toBe('taus')
+    expect(inferFieldType('largeRjets')).toBe('jets')
+    expect(inferFieldType('MissingET')).toBe('met')
+    expect(inferFieldType('met')).toBe('met')
+    expect(inferFieldType('InDetTracks')).toBe('tracks')
+    expect(inferFieldType('CommonServices')).toBeNull()
   })
 })
 
-// ─────────────────────────────────────────────────────────────────────────────
-// DEFINING_BLOCK_TYPES consistency
-// ─────────────────────────────────────────────────────────────────────────────
+describe('optionRole', () => {
+  it('prefers upstream meta.role', () => {
+    expect(optionRole(opt('anything', 'str', '', { meta: { role: 'selection' } }))).toBe('selection')
+  })
+  it('falls back to naming conventions', () => {
+    const jets = findBlock(SCHEMA.blocks, 'Jets')
+    const thinning = findBlock(SCHEMA.blocks, 'Thinning')
+    const byName = b => Object.fromEntries(b.options.map(o => [o.name, o]))
+    expect(optionRole(byName(jets).containerName, { blockDef: jets })).toBe('container')
+    expect(optionRole(byName(thinning).containerName, { blockDef: thinning })).toBe('containerRef')
+    expect(optionRole(byName(thinning).outputName, { blockDef: thinning })).toBe('container')
+    expect(optionRole(byName(jets).containerName, { isSub: true })).toBe('inherited')
+    expect(optionRole(opt('electrons', 'str', ''))).toBe('containerRef')
+    expect(optionRole(opt('selectionName', 'str', ''))).toBe('selection')
+    expect(optionRole(opt('minPt', 'float', 0))).toBeNull()
+    expect(getAutocompleteMode(opt('jets', 'str', ''))).toBe('collections+selections')
+    expect(getAutocompleteMode(opt('minPt', 'float', 0))).toBeNull()
+  })
+})
 
-describe('DEFINING_BLOCK_TYPES', () => {
-  it('all values are either null or a non-empty string', () => {
-    for (const [name, type] of Object.entries(DEFINING_BLOCK_TYPES)) {
-      expect(type === null || (typeof type === 'string' && type.length > 0)).toBe(true)
-    }
+describe('registry', () => {
+  const fromYaml = buildRegistryFromYaml(YAML, SCHEMA.blocks)
+
+  it('collects containers with their types, including outputName aliases', () => {
+    expect(fromYaml.collections.map(c => c.name)).toEqual(['AnaJets', 'AnaElectrons', 'OutJets'])
+    expect(fromYaml.byType.jets.map(c => c.name)).toEqual(['AnaJets'])
+    expect(fromYaml.collections.find(c => c.name === 'OutJets').type).toBe('any')
+  })
+
+  it('collects selections from sub-blocks (using defaults) and from root selection blocks', () => {
+    expect(fromYaml.withSelections).toEqual([
+      'AnaJets.jvt', 'AnaJets.tight', 'AnaElectrons.loose', 'AnaElectrons.tight', 'AnaElectrons.pt50',
+    ])
+  })
+
+  it('is identical whether built from YAML or from the builder state', () => {
+    const fromState = buildRegistryFromState(yamlToConfigSync(YAML, SCHEMA), SCHEMA.blocks)
+    expect(fromState).toEqual(fromYaml)
+  })
+
+  it('ignores disabled blocks in the builder state', () => {
+    const config = yamlToConfigSync(YAML, SCHEMA)
+    config.blocks.Electrons.enabled = false
+    const reg = buildRegistryFromState(config, SCHEMA.blocks)
+    expect(reg.collections.map(c => c.name)).toEqual(['AnaJets', 'OutJets'])
+  })
+})
+
+describe('dependency checker', () => {
+  it('flags unknown containers and selections, only on containerRef options', () => {
+    const registry = buildRegistryFromYaml(YAML, SCHEMA.blocks)
+    const issues = checkDepsFromYaml(YAML, registry, SCHEMA.blocks)
+    expect(issues.map(i => `${i.path}:${i.message}`)).toEqual([
+      "OverlapRemoval[0].muons:Container 'AnaMuons' is not defined by any enabled block",
+      "EventSelection[0].electrons:Selection 'medium' is not defined for container 'AnaElectrons'",
+    ])
+    expect(issues.every(i => i.kind === 'dependency')).toBe(true)
+  })
+
+  it('gives the same answer from the builder state', () => {
+    const config = yamlToConfigSync(YAML, SCHEMA)
+    const registry = buildRegistryFromState(config, SCHEMA.blocks)
+    expect(checkDepsFromState(config, registry, SCHEMA.blocks)).toHaveLength(2)
+  })
+
+  it('looksLikeContainerRef is conservative', () => {
+    expect(looksLikeContainerRef('AnaJets.baselineJvt')).toBe(true)
+    expect(looksLikeContainerRef('AnaElectrons.tight_%SYS%')).toBe(true)
+    expect(looksLikeContainerRef('True')).toBe(false)
+    expect(looksLikeContainerRef('a b')).toBe(false)
+    expect(looksLikeContainerRef(5)).toBe(false)
   })
 })
