@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
+import yaml from 'js-yaml'
 import Sidebar from './components/Sidebar.jsx'
 import BlockPanel from './components/BlockPanel.jsx'
 import YamlPreview from './components/YamlPreview.jsx'
@@ -12,11 +13,14 @@ import SearchOverlay from './components/SearchOverlay.jsx'
 import { useConfig } from './hooks/useConfig.js'
 import { toYamlString } from './utils/yamlSerializer.js'
 import { yamlToConfig } from './utils/yamlToConfig.js'
+import { blocksForConfig, customEntryFromCatalogue, superBlockList } from './utils/schema.js'
 import { buildRegistryFromState } from './utils/collectionRegistry.js'
 import { checkDepsFromState } from './utils/dependencyChecker.js'
 import { RegistryProvider } from './contexts/RegistryContext.js'
+import { fetchSchema, introspectEntry, fetchExample } from './api.js'
+import { loadAutosave, saveAutosave, clearAutosave, mergeRestored } from './utils/autosave.js'
 
-const API = import.meta.env.VITE_API_URL || ''
+const SPLASH_SEEN_KEY = 'itopcptoolkit.splashSeen'
 
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768)
@@ -27,6 +31,10 @@ function useIsMobile() {
     return () => mq.removeEventListener('change', handler)
   }, [])
   return isMobile
+}
+
+function splashSeen() {
+  try { return sessionStorage.getItem(SPLASH_SEEN_KEY) === '1' } catch { return false }
 }
 
 // Brand name with consistent blue/white coloring
@@ -41,140 +49,201 @@ export function BrandName({ className = '' }) {
   )
 }
 
+function isTypingTarget(el) {
+  if (!el) return false
+  const tag = el.tagName
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable
+}
+
 export default function App() {
-  const [showSplash, setShowSplash] = useState(true)
+  const [showSplash, setShowSplash] = useState(() => !splashSeen())
   const [mode, setMode] = useState(null)
-  const [schema, setSchema] = useState([])
+  const [schema, setSchema] = useState(null)
   const [selected, setSelected] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [exportMsg, setExportMsg] = useState(null)
-  const [appVersion, setAppVersion] = useState(null)
-  const [abVersion, setAbVersion] = useState(null)
-  const [tctVersion, setTctVersion] = useState(undefined)
-  const [pdflatex, setPdflatex] = useState(false)
-  const [athena, setAthena] = useState(null)
+  const [notice, setNotice] = useState(null)
   const [searchOpen, setSearchOpen] = useState(false)
+  const [showExpert, setShowExpert] = useState(false)
   const isMobile = useIsMobile()
 
   const {
-    config, init, loadFromYaml,
-    toggleBlock, setOption, addInstance, removeInstance,
+    config, init, load,
+    toggleBlock, setBlockEnabled, setOption, addInstance, removeInstance,
     toggleSubBlock, setSubOption, addSubInstance, removeSubInstance,
+    addCustomBlock, removeCustomBlock, removeUnknownBlock,
+    undo, redo, canUndo, canRedo,
   } = useConfig()
 
+  const flash = useCallback((msg) => setNotice(msg), [])
+
+  // ── Boot: schema + autosave restore ────────────────────────────────────────
   useEffect(() => {
-    Promise.all([
-      fetch(`${API}/api/schema`).then(r => r.json()),
-      fetch(`${API}/api/health`).then(r => r.json()),
-    ])
-      .then(([schemaData, health]) => {
-        setSchema(schemaData)
-        setAthena(health.athena)
-        setAppVersion(health.app_version)
-        setAbVersion(health.ab_version)
-        setTctVersion(health.tct_version ?? null)
-        setPdflatex(health.pdflatex ?? false)
-        init(schemaData)
-        setSelected(schemaData[0]?.name ?? null)
+    fetchSchema()
+      .then(doc => {
+        setSchema(doc)
+        const saved = loadAutosave()
+        if (saved?.config) {
+          load(mergeRestored(saved.config, doc))
+          setSelected(saved.selected ?? doc.blocks[0]?.name ?? null)
+          flash('Restored your previous session')
+        } else {
+          init(doc.blocks)
+          setSelected(doc.blocks[0]?.name ?? null)
+        }
         setLoading(false)
       })
       .catch(err => {
         setError(`Cannot reach backend: ${err.message}`)
         setLoading(false)
       })
-  }, [])
+  }, [])  // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Registry derived from builder config state
-  const registry = useMemo(
-    () => buildRegistryFromState(config, schema),
-    [config, schema]
-  )
+  // ── Derived data ───────────────────────────────────────────────────────────
+  const blocks = useMemo(() => (schema ? blocksForConfig(schema, config) : []), [schema, config.addConfigBlocks])  // eslint-disable-line react-hooks/exhaustive-deps
+  const registry = useMemo(() => buildRegistryFromState(config, blocks), [config, blocks])
+  const depIssues = useMemo(() => checkDepsFromState(config, registry, blocks), [config, registry, blocks])
+  const versions = schema?.versions ?? {}
 
-  // Dependency issues for builder mode
-  const depIssues = useMemo(
-    () => checkDepsFromState(config, registry, schema),
-    [config, registry, schema]
-  )
+  // ── Autosave (debounced) ───────────────────────────────────────────────────
+  useEffect(() => {
+    if (!schema) return
+    const t = setTimeout(() => saveAutosave({ config, selected }), 500)
+    return () => clearTimeout(t)
+  }, [config, selected, schema])
 
-  // Cmd+F / Ctrl+F global shortcut — opens search, prevents browser find
+  useEffect(() => {
+    if (!notice) return
+    const t = setTimeout(() => setNotice(null), 4000)
+    return () => clearTimeout(t)
+  }, [notice])
+
+  // ── Keyboard shortcuts: search, undo, redo ─────────────────────────────────
   useEffect(() => {
     function handler(e) {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
+      const meta = e.metaKey || e.ctrlKey
+      if (!meta) return
+      if (e.key === 'f') {
         e.preventDefault()
         if (mode) setSearchOpen(o => !o)
+        return
       }
+      if (mode !== 'builder' || isTypingTarget(document.activeElement)) return
+      if (e.key === 'z' && !e.shiftKey) { e.preventDefault(); undo() }
+      else if ((e.key === 'z' && e.shiftKey) || e.key === 'y') { e.preventDefault(); redo() }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [mode])
+  }, [mode, undo, redo])
 
+  // ── Handlers ───────────────────────────────────────────────────────────────
   function handleSearchNavigate({ blockName, optionName }) {
-    if (mode === 'builder') {
-      setSelected(blockName)
-      if (config[blockName] && !config[blockName].enabled) {
-        toggleBlock(blockName)
-      }
-      if (optionName) {
-        // Use a longer timeout to ensure the panel has rendered after state changes
-        setTimeout(() => {
-          const cleanOpt = optionName.includes('.') ? optionName.split('.')[1] : optionName
-          const el = document.querySelector(`[data-option="${blockName}:${cleanOpt}"]`)
-          if (el) {
-            el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-            el.classList.add('search-highlight')
-            setTimeout(() => el.classList.remove('search-highlight'), 2000)
-          }
-        }, 150)
-      }
+    if (mode !== 'builder') return
+    setSelected(blockName)
+    if (config.blocks[blockName] && !config.blocks[blockName].enabled) setBlockEnabled(blockName, true)
+    if (optionName) {
+      setTimeout(() => {
+        const cleanOpt = optionName.includes('.') ? optionName.split('.')[1] : optionName
+        const el = document.querySelector(`[data-option="${blockName}:${cleanOpt}"]`)
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          el.classList.add('search-highlight')
+          setTimeout(() => el.classList.remove('search-highlight'), 2000)
+        }
+      }, 150)
     }
   }
 
-  async function handleExport(filename) {
+  function handleExport(filename) {
     try {
-      const yamlText = toYamlString(config, schema)
-      const blob = new Blob([yamlText], { type: 'application/x-yaml' })
+      const blob = new Blob([toYamlString(config, schema)], { type: 'application/x-yaml' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
       a.download = filename
       a.click()
       URL.revokeObjectURL(url)
-      setExportMsg(`Downloaded ${filename}`)
+      flash(`Downloaded ${filename}`)
     } catch {
-      setExportMsg('Export failed')
+      flash('Export failed')
     }
-    setTimeout(() => setExportMsg(null), 4000)
   }
 
-  function handleOpenInBuilder(configObj) {
-    const builderState = yamlToConfig(configObj, schema)
-    loadFromYaml(builderState)
-    setMode('builder')
-    setSelected(Object.keys(configObj)[0] ?? schema[0]?.name ?? null)
+  async function handleOpenInBuilder(configObj) {
+    try {
+      const state = await yamlToConfig(configObj, schema, entry => introspectEntry(entry))
+      load(state)
+      setMode('builder')
+      const first = Object.keys(configObj).find(k => state.blocks[k]) ?? schema.blocks[0]?.name ?? null
+      setSelected(first)
+      const opaque = state.addConfigBlocks.filter(e => e.block?.opaque).map(e => e.algName)
+      if (opaque.length) flash(`Custom block(s) could not be introspected: ${opaque.join(', ')}`)
+    } catch (err) {
+      flash(`Cannot open in builder: ${err.message}`)
+    }
+  }
+
+  async function handleLoadExample(path) {
+    try {
+      const parsed = yaml.load(await fetchExample(path))
+      if (!parsed || typeof parsed !== 'object') throw new Error('file is not a YAML mapping')
+      await handleOpenInBuilder(parsed)
+      flash(`Loaded ${path}`)
+    } catch (err) {
+      flash(`Cannot load example: ${err.message}`)
+    }
+  }
+
+  function handleNewConfig() {
+    init(schema.blocks)
+    clearAutosave()
+    setSelected(schema.blocks[0]?.name ?? null)
+    flash('Started a new configuration')
+  }
+
+  function handleAddCatalogueEntry(catalogueEntry) {
+    const entry = customEntryFromCatalogue(catalogueEntry)
+    addCustomBlock(entry)
+    const parents = superBlockList(entry.superBlocks)
+    if (parents.length) flash(`'${entry.algName}' is now available as a sub-block of ${parents.join(', ')}`)
+    else setSelected(entry.algName)
+  }
+
+  async function handleAddCustomEntry(form) {
+    const block = await introspectEntry(form)   // throws with the backend's message
+    handleAddCatalogueEntry({ ...form, block })
+  }
+
+  function handleRemoveCustom(id) {
+    const entry = config.addConfigBlocks.find(e => e.id === id)
+    removeCustomBlock(id)
+    if (entry && selected === entry.algName) setSelected(schema.blocks[0]?.name ?? null)
   }
 
   // Pill click: toggle; if turning ON, also navigate to that block
   function handleSidebarToggle(name) {
-    const wasEnabled = config[name]?.enabled
+    const wasEnabled = config.blocks[name]?.enabled
     toggleBlock(name)
     if (!wasEnabled) setSelected(name)
   }
 
   // Name click: always navigate; if block was OFF, also enable it
   function handleSidebarSelect(name) {
-    if (!config[name]?.enabled) toggleBlock(name)
+    if (!config.blocks[name]?.enabled) setBlockEnabled(name, true)
     setSelected(name)
   }
 
-  const selectedDef = schema.find(b => b.name === selected)
-  const selectedState = config[selected]
+  const selectedDef = blocks.find(b => b.name === selected)
+  const selectedState = config.blocks[selected]
+  const enabledBlockNames = useMemo(
+    () => new Set(Object.entries(config.blocks).filter(([, s]) => s?.enabled).map(([n]) => n)),
+    [config.blocks])
 
-  const docsUrl = tctVersion === undefined || tctVersion === null
+  const docsUrl = !versions.tct
     ? 'https://topcptoolkit.docs.cern.ch/'
-    : tctVersion === 'latest'
+    : versions.tct === 'latest'
       ? 'https://topcptoolkit.docs.cern.ch/latest/'
-      : `https://topcptoolkit.docs.cern.ch/${tctVersion}/`
+      : `https://topcptoolkit.docs.cern.ch/${versions.tct}/`
 
   if (loading) return (
     <div className="min-h-screen bg-slate-900 flex items-center justify-center text-slate-400">
@@ -193,7 +262,8 @@ export default function App() {
 
   const sidebarPanel = (
     <Sidebar
-      schema={schema}
+      blocks={blocks}
+      categories={schema.categories}
       config={config}
       selected={selected}
       onSelect={handleSidebarSelect}
@@ -201,33 +271,40 @@ export default function App() {
       onAddInstance={addInstance}
       docsUrl={docsUrl}
       depIssues={depIssues}
+      catalogue={schema.catalogue}
+      onAddCatalogueEntry={handleAddCatalogueEntry}
+      onAddCustomEntry={handleAddCustomEntry}
+      onRemoveCustom={handleRemoveCustom}
+      onRemoveUnknown={removeUnknownBlock}
+      examples={schema.examples}
+      onLoadExample={handleLoadExample}
+      onNewConfig={handleNewConfig}
+      canIntrospect={versions.athena === true}
     />
   )
 
   const editorPanel = (
     <main className="flex flex-col overflow-hidden h-full bg-slate-900">
       {selectedDef ? (
-        <>
-          <div className="px-5 py-3 border-b border-slate-700 bg-slate-800 shrink-0">
-            <h2 className="font-bold text-slate-100">{selectedDef.label}</h2>
-            <p className="text-xs text-slate-500 font-mono mt-0.5 truncate">{selectedDef.class_path}</p>
-          </div>
-          <BlockPanel
-            blockDef={selectedDef}
-            blockState={selectedState}
-            depIssues={depIssues.filter(i => i.path.startsWith(selectedDef.name))}
-            onSetOption={(instId, key, val) => setOption(selectedDef.name, instId, key, val)}
-            onAddInstance={() => addInstance(selectedDef.name, selectedDef)}
-            onRemoveInstance={(instId) => removeInstance(selectedDef.name, instId)}
-            onToggleSubBlock={(instId, subName) => toggleSubBlock(selectedDef.name, instId, subName)}
-            onSetSubOption={(instId, subName, subInstId, key, val) =>
-              setSubOption(selectedDef.name, instId, subName, subInstId, key, val)}
-            onAddSubInstance={(instId, subName) =>
-              addSubInstance(selectedDef.name, instId, subName)}
-            onRemoveSubInstance={(instId, subName, subInstId) =>
-              removeSubInstance(selectedDef.name, instId, subName, subInstId)}
-          />
-        </>
+        <BlockPanel
+          blockDef={selectedDef}
+          blockState={selectedState}
+          depIssues={depIssues.filter(i => i.path.startsWith(`${selectedDef.name}[`))}
+          showExpert={showExpert}
+          onToggleExpert={() => setShowExpert(v => !v)}
+          keywords={schema.keywords}
+          enabledBlockNames={enabledBlockNames}
+          onEnable={() => setBlockEnabled(selectedDef.name, true)}
+          onSetOption={(instId, key, val) => setOption(selectedDef.name, instId, key, val)}
+          onAddInstance={() => addInstance(selectedDef.name, selectedDef)}
+          onRemoveInstance={(instId) => removeInstance(selectedDef.name, instId)}
+          onToggleSubBlock={(instId, subName) => toggleSubBlock(selectedDef.name, instId, subName)}
+          onSetSubOption={(instId, subName, subInstId, key, val) =>
+            setSubOption(selectedDef.name, instId, subName, subInstId, key, val)}
+          onAddSubInstance={(instId, subName) => addSubInstance(selectedDef.name, instId, subName)}
+          onRemoveSubInstance={(instId, subName, subInstId) =>
+            removeSubInstance(selectedDef.name, instId, subName, subInstId)}
+        />
       ) : (
         <div className="flex-1 flex items-center justify-center text-slate-500 text-sm">
           Select a block from the sidebar.
@@ -244,7 +321,7 @@ export default function App() {
     <RegistryProvider value={registry}>
       {searchOpen && (
         <SearchOverlay
-          schema={schema}
+          blocks={blocks}
           mode={mode}
           onNavigate={handleSearchNavigate}
           onClose={() => setSearchOpen(false)}
@@ -253,52 +330,35 @@ export default function App() {
 
       {showSplash && (
         <SplashScreen
-          onDone={() => setShowSplash(false)}
-          version={appVersion}
+          onDone={() => { setShowSplash(false); try { sessionStorage.setItem(SPLASH_SEEN_KEY, '1') } catch { /* ignore */ } }}
+          version={versions.app}
         />
       )}
 
       <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col">
         <header className="h-10 bg-slate-800 border-b border-slate-700 flex items-center px-4 gap-2 shrink-0 overflow-x-auto">
-          {/* Brand name with blue/white color scheme */}
           <span className="text-sm font-bold shrink-0">
-            <span className="text-blue-400">i</span>
-            <span className="text-slate-100">Top</span>
-            <span className="text-blue-400">CP</span>
-            <span className="text-slate-100">Toolkit</span>
-            {appVersion && <span className="text-slate-500 font-normal"> v{appVersion}</span>}
+            <BrandName />
+            {versions.app && <span className="text-slate-500 font-normal"> v{versions.app}</span>}
           </span>
 
-          {athena === false && (
-            <span className="text-xs bg-yellow-800/50 text-yellow-300 px-2 py-0.5 rounded shrink-0">
-              <span className="hidden sm:inline">⚠ Athena not available — options may be empty</span>
-              <span className="sm:hidden">⚠ No Athena</span>
-            </span>
+          {schema.source === 'athena' && versions.ab && (
+            <Badge tone="green" full={`✓ AnalysisBase ${versions.ab}`} short={`✓ AB ${versions.ab}`} />
           )}
-          {athena === true && abVersion && (
-            <span className="text-xs bg-green-800/50 text-green-300 px-2 py-0.5 rounded shrink-0">
-              <span className="hidden sm:inline">✓ AnalysisBase {abVersion}</span>
-              <span className="sm:hidden">✓ AB {abVersion}</span>
-            </span>
+          {schema.source === 'athena' && !versions.ab && (
+            <Badge tone="green" full="✓ Athena environment loaded" short="✓ Athena" />
           )}
-          {athena === true && !abVersion && (
-            <span className="text-xs bg-green-800/50 text-green-300 px-2 py-0.5 rounded shrink-0">
-              <span className="hidden sm:inline">✓ Athena environment loaded</span>
-              <span className="sm:hidden">✓ Athena</span>
-            </span>
+          {schema.source === 'snapshot' && (
+            <Badge tone="yellow"
+              full={`⚠ Schema snapshot${schema.snapshotVersions?.ab ? ` (AB ${schema.snapshotVersions.ab}${schema.snapshotVersions.tct ? `, TCT ${schema.snapshotVersions.tct}` : ''})` : ''} — no live Athena`}
+              short="⚠ Snapshot" />
           )}
-
-          {tctVersion !== undefined && (
-            tctVersion
-              ? <span className="text-xs bg-green-800/50 text-green-300 px-2 py-0.5 rounded shrink-0">
-                  <span className="hidden sm:inline">✓ TopCPToolkit {tctVersion}</span>
-                  <span className="sm:hidden">✓ TCT {tctVersion}</span>
-                </span>
-              : <span className="text-xs bg-red-800/50 text-red-300 px-2 py-0.5 rounded shrink-0">
-                  <span className="hidden sm:inline">✗ No TopCPToolkit built</span>
-                  <span className="sm:hidden">✗ No TCT</span>
-                </span>
+          {schema.source === 'none' && (
+            <Badge tone="yellow" full="⚠ Athena not available — no schema" short="⚠ No schema" />
           )}
+          {versions.tct
+            ? <Badge tone="green" full={`✓ TopCPToolkit ${versions.tct}`} short={`✓ TCT ${versions.tct}`} />
+            : <Badge tone="red" full="✗ No TopCPToolkit built" short="✗ No TCT" />}
 
           <a href={docsUrl} target="_blank" rel="noreferrer"
             className="text-xs bg-blue-800/50 text-blue-300 hover:bg-blue-700/50 px-2 py-0.5 rounded transition-colors shrink-0">
@@ -306,9 +366,19 @@ export default function App() {
             <span className="sm:hidden">📖 Docs</span>
           </a>
 
-          {exportMsg && <span className="text-xs text-green-400 shrink-0">{exportMsg}</span>}
+          {notice && <span className="text-xs text-green-400 shrink-0">{notice}</span>}
 
-          {/* Search button — shows Cmd+F / Ctrl+F shortcut */}
+          {mode === 'builder' && (
+            <div className="flex items-center gap-1 shrink-0">
+              <HeaderBtn onClick={undo} disabled={!canUndo} title="Undo (⌘Z / Ctrl+Z)">↶</HeaderBtn>
+              <HeaderBtn onClick={redo} disabled={!canRedo} title="Redo (⇧⌘Z / Ctrl+Y)">↷</HeaderBtn>
+              <HeaderBtn onClick={() => setShowExpert(v => !v)} active={showExpert}
+                title="Show expert-only options (requires CommonServices.enableExpertMode at runtime)">
+                🧪 <span className="hidden md:inline">Expert</span>
+              </HeaderBtn>
+            </div>
+          )}
+
           {mode && mode !== 'intnote' && (
             <button
               type="button"
@@ -322,43 +392,24 @@ export default function App() {
             </button>
           )}
 
-          {/* Mode switcher */}
           {mode && (
             <div className="ml-auto flex items-center gap-1 shrink-0">
-              <button
-                type="button"
-                onClick={() => setMode('builder')}
-                className={`text-xs px-2 py-0.5 rounded transition-colors ${mode === 'builder' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700'}`}
-              >
-                ⚙ Builder
-              </button>
-              <button
-                type="button"
-                onClick={() => setMode('reader')}
-                className={`text-xs px-2 py-0.5 rounded transition-colors ${mode === 'reader' ? 'bg-emerald-700 text-white' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700'}`}
-              >
-                ◉ Reader
-              </button>
-              <button
-                type="button"
-                onClick={() => setMode('intnote')}
-                className={`text-xs px-2 py-0.5 rounded transition-colors ${mode === 'intnote' ? 'bg-amber-600 text-white' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700'}`}
-              >
-                ✍ INTnote
-              </button>
+              <ModeBtn active={mode === 'builder'} color="bg-blue-600" onClick={() => setMode('builder')}>⚙ Builder</ModeBtn>
+              <ModeBtn active={mode === 'reader'} color="bg-emerald-700" onClick={() => setMode('reader')}>◉ Reader</ModeBtn>
+              <ModeBtn active={mode === 'intnote'} color="bg-amber-600" onClick={() => setMode('intnote')}>✍ INTnote</ModeBtn>
             </div>
           )}
         </header>
 
         {!showSplash && mode === null && (
-          <ModeSelector onSelect={setMode} appVersion={appVersion} tctVersion={tctVersion} pdflatex={pdflatex} />
+          <ModeSelector onSelect={setMode} appVersion={versions.app} tctVersion={versions.tct} pdflatex={versions.pdflatex} />
         )}
 
         {mode === 'builder' && (
           isMobile ? (
             <MobileLayout sidebar={sidebarPanel} editor={editorPanel} preview={previewPanel} />
           ) : (
-            <ResizablePanels initialSizes={[18, 52, 30]}>
+            <ResizablePanels initialSizes={[20, 50, 30]}>
               {sidebarPanel}
               {editorPanel}
               {previewPanel}
@@ -378,10 +429,44 @@ export default function App() {
 
         {mode === 'intnote' && (
           <div className="flex flex-1 overflow-hidden">
-            <IntNoteWriter tctVersion={tctVersion} pdflatex={pdflatex} />
+            <IntNoteWriter tctVersion={versions.tct} pdflatex={versions.pdflatex} />
           </div>
         )}
       </div>
     </RegistryProvider>
+  )
+}
+
+function Badge({ tone, full, short }) {
+  const cls = {
+    green: 'bg-green-800/50 text-green-300',
+    yellow: 'bg-yellow-800/50 text-yellow-300',
+    red: 'bg-red-800/50 text-red-300',
+  }[tone]
+  return (
+    <span className={`text-xs ${cls} px-2 py-0.5 rounded shrink-0`}>
+      <span className="hidden sm:inline">{full}</span>
+      <span className="sm:hidden">{short}</span>
+    </span>
+  )
+}
+
+function HeaderBtn({ children, onClick, disabled, active, title }) {
+  return (
+    <button type="button" onClick={onClick} disabled={disabled} title={title}
+      className={`text-xs px-2 py-0.5 rounded transition-colors disabled:opacity-30 ${
+        active ? 'bg-purple-700/60 text-purple-100' : 'bg-slate-700/50 hover:bg-slate-600 text-slate-300'}`}>
+      {children}
+    </button>
+  )
+}
+
+function ModeBtn({ children, active, color, onClick }) {
+  return (
+    <button type="button" onClick={onClick}
+      className={`text-xs px-2 py-0.5 rounded transition-colors ${
+        active ? `${color} text-white` : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700'}`}>
+      {children}
+    </button>
   )
 }

@@ -165,7 +165,7 @@ function DiffBadge({ status, valueA, valueB }) {
 // ── Main component ──────────────────────────────────────────────────────────
 export default function AnnotatedYamlView({
   configObj,
-  schema,
+  blocks,
   issues = [],
   diffMap = null,
   scrollToBlock = null,
@@ -174,7 +174,7 @@ export default function AnnotatedYamlView({
   const containerRef = useRef(null)
   const issueMap = buildIssueMap(issues)
 
-  const lines = buildLines(configObj, schema)
+  const lines = buildLines(configObj, blocks)
 
   // Scroll to block when requested
   useEffect(() => {

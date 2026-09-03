@@ -8,7 +8,7 @@ import { computeDiff } from '../utils/yamlLineBuilder.js'
  * ConfigA is the "base", configB is the "new" one.
  * Lines in the diff map are colored accordingly in each view.
  */
-export default function DiffView({ configA, schema, onClose }) {
+export default function DiffView({ configA, blocks, onClose }) {
   const [configB, setConfigB] = useState(null)
 
   if (!configB) {
@@ -88,13 +88,13 @@ export default function DiffView({ configA, schema, onClose }) {
           <div className="px-4 py-1 bg-slate-800/60 border-b border-slate-700 text-xs font-semibold text-slate-400 shrink-0">
             A — Base
           </div>
-          <AnnotatedYamlView configObj={configA} schema={schema} diffMap={diffMapA} />
+          <AnnotatedYamlView configObj={configA} blocks={blocks} diffMap={diffMapA} />
         </div>
         <div className="flex flex-col flex-1 overflow-hidden min-w-0">
           <div className="px-4 py-1 bg-slate-800/60 border-b border-slate-700 text-xs font-semibold text-slate-400 shrink-0">
             B — Comparison
           </div>
-          <AnnotatedYamlView configObj={configB} schema={schema} diffMap={diffMapB} />
+          <AnnotatedYamlView configObj={configB} blocks={blocks} diffMap={diffMapB} />
         </div>
       </div>
     </div>

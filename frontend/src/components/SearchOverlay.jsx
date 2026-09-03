@@ -4,12 +4,12 @@ import { useState, useEffect, useRef, useCallback } from 'react'
  * Global search overlay. Opened via Cmd+F / Ctrl+F.
  *
  * Props:
- *   schema        – full schema array
+ *   blocks        – effective block list
  *   mode          – 'builder' | 'reader'
  *   onNavigate    – ({ blockName, optionName? }) => void
  *   onClose       – () => void
  */
-export default function SearchOverlay({ schema, mode, onNavigate, onClose }) {
+export default function SearchOverlay({ blocks, mode, onNavigate, onClose }) {
   const [query, setQuery] = useState('')
   const [activeIdx, setActiveIdx] = useState(0)
   const inputRef = useRef(null)
@@ -20,7 +20,7 @@ export default function SearchOverlay({ schema, mode, onNavigate, onClose }) {
   }, [])
 
   // Build flat search index from schema
-  const index = buildIndex(schema)
+  const index = buildIndex(blocks)
 
   // Filter results
   const results = query.trim().length === 0
@@ -169,29 +169,34 @@ function Highlight({ text, query }) {
 
 // ── Index builder ────────────────────────────────────────────────────────────
 
-function buildIndex(schema) {
+function docOf(block) {
+  return (block.classes || []).map(c => c.docstring).filter(Boolean).join(' ')
+}
+
+function buildIndex(blocks) {
   const items = []
 
-  for (const block of (schema || [])) {
+  for (const block of (blocks || [])) {
+    const doc = docOf(block)
     items.push({
       id: `block:${block.name}`,
       kind: 'block',
       blockName: block.name,
       blockLabel: block.label ?? block.name,
       optionName: null,
-      description: block.docstring ?? '',
+      description: doc,
       optType: null,
       defaultStr: null,
-      searchText: [block.name, block.label, block.docstring].filter(Boolean).join(' ').toLowerCase(),
+      searchText: [block.name, block.label, doc, ...(block.classes || []).map(c => c.cls)].filter(Boolean).join(' ').toLowerCase(),
     })
 
     for (const opt of (block.options || [])) {
-      items.push(makeOptEntry(opt, block, null))
+      if (!opt.generic) items.push(makeOptEntry(opt, block, null))
     }
 
-    for (const sub of (block.sub_blocks || [])) {
+    for (const sub of (block.subBlocks || [])) {
       for (const opt of (sub.options || [])) {
-        items.push(makeOptEntry(opt, block, sub))
+        if (!opt.generic) items.push(makeOptEntry(opt, block, sub))
       }
     }
   }

@@ -4,34 +4,46 @@ import YamlLoader from './YamlLoader.jsx'
 import DiffView from './DiffView.jsx'
 import { validateConfig } from '../utils/yamlValidator.js'
 import { generateAnnotatedYaml } from '../utils/yamlAnnotator.js'
-import { buildRegistryFromYaml } from '../utils/collectionRegistry.js'
+import { buildRegistryFromYaml, EMPTY_REGISTRY } from '../utils/collectionRegistry.js'
 import { checkDepsFromYaml } from '../utils/dependencyChecker.js'
+import { resolveCustomEntriesSync, resolveCustomEntries } from '../utils/yamlToConfig.js'
+import { effectiveBlocks, ADD_CONFIG_BLOCKS } from '../utils/schema.js'
+import { introspectEntry } from '../api.js'
 
+/**
+ * Reader mode.  The loaded file's AddConfigBlocks section extends the schema
+ * (catalogue first, then a live introspection for anything else) before the
+ * rest of the file is validated — the same order TextConfig uses.
+ */
 export default function ConfigReader({ schema, onOpenInBuilder, onOpenSearch }) {
   const [config, setConfig] = useState(null)
+  const [customEntries, setCustomEntries] = useState([])
   const [isDiff, setIsDiff] = useState(false)
   const [scrollToBlock, setScrollToBlock] = useState(null)
   const [showIssues, setShowIssues] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [issueFilter, setIssueFilter] = useState('all') // 'all' | 'error' | 'warning' | 'dep'
 
-  // Validation issues
-  const schemaIssues = useMemo(
-    () => config && schema.length ? validateConfig(config, schema) : [],
-    [config, schema]
-  )
+  // Resolve custom blocks: synchronously from the catalogue, then upgrade
+  // opaque entries through the backend when Athena is available.
+  useEffect(() => {
+    if (!config) { setCustomEntries([]); return }
+    const sync = resolveCustomEntriesSync(config, schema)
+    setCustomEntries(sync)
+    if (schema.versions?.athena && sync.some(e => e.block?.opaque)) {
+      let cancelled = false
+      resolveCustomEntries(config, schema, entry => introspectEntry(entry))
+        .then(entries => { if (!cancelled) setCustomEntries(entries) })
+        .catch(() => {})
+      return () => { cancelled = true }
+    }
+  }, [config, schema])
 
-  // Dependency issues
-  const registry = useMemo(
-    () => config ? buildRegistryFromYaml(config, schema) : { collections: [], selections: [], byType: {}, withSelections: [] },
-    [config, schema]
-  )
-  const depIssues = useMemo(
-    () => config ? checkDepsFromYaml(config, registry, schema) : [],
-    [config, registry, schema]
-  )
+  const blocks = useMemo(() => effectiveBlocks(schema.blocks, customEntries), [schema, customEntries])
 
-  // Merge all issues, dep issues have kind='dependency' already
+  const schemaIssues = useMemo(() => (config ? validateConfig(config, blocks) : []), [config, blocks])
+  const registry = useMemo(() => (config ? buildRegistryFromYaml(config, blocks) : EMPTY_REGISTRY), [config, blocks])
+  const depIssues = useMemo(() => (config ? checkDepsFromYaml(config, registry, blocks) : []), [config, registry, blocks])
   const allIssues = useMemo(() => [...schemaIssues, ...depIssues], [schemaIssues, depIssues])
 
   const filteredIssues = useMemo(() => {
@@ -56,8 +68,7 @@ export default function ConfigReader({ schema, onOpenInBuilder, onOpenSearch }) 
 
   function handleExportAnnotated() {
     if (!config) return
-    const yamlStr = generateAnnotatedYaml(config, schema)
-    const blob = new Blob([yamlStr], { type: 'application/x-yaml' })
+    const blob = new Blob([generateAnnotatedYaml(config, blocks)], { type: 'application/x-yaml' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
@@ -78,52 +89,44 @@ export default function ConfigReader({ schema, onOpenInBuilder, onOpenSearch }) 
   }
 
   const errorCount = allIssues.filter(i => i.severity === 'error' && i.kind !== 'dependency').length
-  const warnCount  = allIssues.filter(i => i.severity === 'warning' && i.kind !== 'dependency').length
-  const depCount   = depIssues.length
+  const warnCount = allIssues.filter(i => i.severity === 'warning' && i.kind !== 'dependency').length
+  const depCount = depIssues.length
 
   const presentBlocks = Object.keys(config)
-  const schemaMap = Object.fromEntries(schema.map(b => [b.name, b]))
+  const blockMap = Object.fromEntries(blocks.map(b => [b.name, b]))
 
-  // Per-block issue index
   const blockIssues = {}
   for (const issue of allIssues) {
     const blockKey = issue.path.split('[')[0].split('.')[0]
-    if (!blockIssues[blockKey]) blockIssues[blockKey] = []
-    blockIssues[blockKey].push(issue)
+    ;(blockIssues[blockKey] ??= []).push(issue)
   }
+
+  const toolbar = (
+    <Toolbar
+      config={config} errorCount={errorCount} warnCount={warnCount} depCount={depCount}
+      isDiff={isDiff} showIssues={showIssues} sidebarOpen={sidebarOpen}
+      onNewFile={() => { setConfig(null); setIsDiff(false) }}
+      onDiff={() => setIsDiff(d => !d)}
+      onExport={handleExportAnnotated}
+      onOpenInBuilder={() => onOpenInBuilder(config)}
+      onToggleIssues={() => setShowIssues(v => !v)}
+      onToggleSidebar={() => setSidebarOpen(s => !s)}
+      onOpenSearch={onOpenSearch}
+    />
+  )
 
   if (isDiff) {
     return (
       <div className="flex flex-1 flex-col overflow-hidden">
-        <Toolbar
-          config={config} errorCount={errorCount} warnCount={warnCount} depCount={depCount}
-          isDiff={isDiff} showIssues={showIssues} sidebarOpen={sidebarOpen}
-          onNewFile={() => { setConfig(null); setIsDiff(false) }}
-          onDiff={() => setIsDiff(d => !d)}
-          onExport={handleExportAnnotated}
-          onOpenInBuilder={() => onOpenInBuilder(config)}
-          onToggleIssues={() => setShowIssues(v => !v)}
-          onToggleSidebar={() => setSidebarOpen(s => !s)}
-          onOpenSearch={onOpenSearch}
-        />
-        <DiffView configA={config} schema={schema} onClose={() => setIsDiff(false)} />
+        {toolbar}
+        <DiffView configA={config} blocks={blocks} onClose={() => setIsDiff(false)} />
       </div>
     )
   }
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
-      <Toolbar
-        config={config} errorCount={errorCount} warnCount={warnCount} depCount={depCount}
-        isDiff={isDiff} showIssues={showIssues} sidebarOpen={sidebarOpen}
-        onNewFile={() => setConfig(null)}
-        onDiff={() => setIsDiff(true)}
-        onExport={handleExportAnnotated}
-        onOpenInBuilder={() => onOpenInBuilder(config)}
-        onToggleIssues={() => setShowIssues(v => !v)}
-        onToggleSidebar={() => setSidebarOpen(s => !s)}
-        onOpenSearch={onOpenSearch}
-      />
+      {toolbar}
 
       <div className="flex flex-1 overflow-hidden">
         {sidebarOpen && (
@@ -133,25 +136,21 @@ export default function ConfigReader({ schema, onOpenInBuilder, onOpenSearch }) 
             </div>
             <nav className="flex-1 py-1">
               {presentBlocks.map(bk => {
-                const def = schemaMap[bk]
+                const def = blockMap[bk] ?? (bk === ADD_CONFIG_BLOCKS ? { label: 'Add Config Blocks' } : null)
                 const bi = blockIssues[bk] || []
                 const errs = bi.filter(i => i.severity === 'error' && i.kind !== 'dependency').length
                 const warns = bi.filter(i => i.severity === 'warning' && i.kind !== 'dependency').length
                 const deps = bi.filter(i => i.kind === 'dependency').length
                 return (
-                  <button
-                    key={bk}
-                    type="button"
-                    onClick={() => setScrollToBlock(bk)}
-                    className="w-full text-left px-3 py-1.5 flex items-center gap-1 hover:bg-slate-800 transition-colors"
-                  >
-                    <span className={`text-xs truncate ${!def ? 'text-red-400' : 'text-slate-300'}`}>
+                  <button key={bk} type="button" onClick={() => setScrollToBlock(bk)}
+                    className="w-full text-left px-3 py-1.5 flex items-center gap-1 hover:bg-slate-800 transition-colors">
+                    <span className={`text-xs truncate ${!def ? 'text-red-400' : def.custom ? 'text-purple-300' : 'text-slate-300'}`}>
                       {def?.label ?? bk}
                     </span>
                     <span className="flex gap-0.5 ml-auto shrink-0">
-                      {errs  > 0 && <span className="text-red-400 text-xs">✖{errs}</span>}
+                      {errs > 0 && <span className="text-red-400 text-xs">✖{errs}</span>}
                       {warns > 0 && <span className="text-yellow-400 text-xs">⚠{warns}</span>}
-                      {deps  > 0 && <span className="text-orange-400 text-xs">⊘{deps}</span>}
+                      {deps > 0 && <span className="text-orange-400 text-xs">⊘{deps}</span>}
                     </span>
                   </button>
                 )
@@ -161,52 +160,31 @@ export default function ConfigReader({ schema, onOpenInBuilder, onOpenSearch }) 
         )}
 
         <div className="flex flex-1 flex-col overflow-hidden">
-          {/* Issues panel */}
           {showIssues && (
             <div className="border-b border-slate-700 bg-slate-900/80 max-h-44 overflow-y-auto shrink-0">
-              {/* Filter tabs */}
               <div className="flex items-center gap-1 px-3 pt-2 pb-1 border-b border-slate-800">
                 {[
-                  { key: 'all',     label: `All (${allIssues.length})` },
-                  { key: 'error',   label: `Errors (${errorCount})`,    color: 'text-red-400' },
-                  { key: 'warning', label: `Warnings (${warnCount})`,   color: 'text-yellow-400' },
-                  { key: 'dep',     label: `References (${depCount})`,  color: 'text-orange-400' },
+                  { key: 'all', label: `All (${allIssues.length})` },
+                  { key: 'error', label: `Errors (${errorCount})`, color: 'text-red-400' },
+                  { key: 'warning', label: `Warnings (${warnCount})`, color: 'text-yellow-400' },
+                  { key: 'dep', label: `References (${depCount})`, color: 'text-orange-400' },
                 ].map(tab => (
-                  <button
-                    key={tab.key}
-                    type="button"
-                    onClick={() => setIssueFilter(tab.key)}
+                  <button key={tab.key} type="button" onClick={() => setIssueFilter(tab.key)}
                     className={`text-xs px-2 py-0.5 rounded transition-colors ${
-                      issueFilter === tab.key
-                        ? 'bg-slate-700 text-slate-100'
-                        : `text-slate-500 hover:text-slate-300 ${tab.color ?? ''}`
-                    }`}
-                  >
+                      issueFilter === tab.key ? 'bg-slate-700 text-slate-100' : `text-slate-500 hover:text-slate-300 ${tab.color ?? ''}`}`}>
                     {tab.label}
                   </button>
                 ))}
               </div>
-
               <div className="px-4 py-1.5">
-                {filteredIssues.length === 0 && (
-                  <div className="text-xs text-emerald-400 py-1">✓ No issues in this category</div>
-                )}
+                {filteredIssues.length === 0 && <div className="text-xs text-emerald-400 py-1">✓ No issues in this category</div>}
                 {filteredIssues.map((issue, i) => (
                   <div key={i} className="flex items-start gap-2 py-0.5 text-xs">
-                    <span className={
-                      issue.kind === 'dependency'
-                        ? 'text-orange-400 shrink-0'
-                        : issue.severity === 'error'
-                          ? 'text-red-400 shrink-0'
-                          : 'text-yellow-400 shrink-0'
-                    }>
+                    <span className={issue.kind === 'dependency' ? 'text-orange-400 shrink-0' : issue.severity === 'error' ? 'text-red-400 shrink-0' : 'text-yellow-400 shrink-0'}>
                       {issue.kind === 'dependency' ? '⊘' : issue.severity === 'error' ? '✖' : '⚠'}
                     </span>
-                    <button
-                      type="button"
-                      className="text-slate-500 font-mono shrink-0 hover:text-blue-400 text-left"
-                      onClick={() => setScrollToBlock(issue.path.split('[')[0].split('.')[0])}
-                    >
+                    <button type="button" className="text-slate-500 font-mono shrink-0 hover:text-blue-400 text-left"
+                      onClick={() => setScrollToBlock(issue.path.split('[')[0].split('.')[0])}>
                       {issue.path}
                     </button>
                     <span className="text-slate-300">{issue.message}</span>
@@ -216,12 +194,7 @@ export default function ConfigReader({ schema, onOpenInBuilder, onOpenSearch }) 
             </div>
           )}
 
-          <AnnotatedYamlView
-            configObj={config}
-            schema={schema}
-            issues={allIssues}
-            scrollToBlock={scrollToBlock}
-          />
+          <AnnotatedYamlView configObj={config} blocks={blocks} issues={allIssues} scrollToBlock={scrollToBlock} />
         </div>
       </div>
     </div>
@@ -259,18 +232,12 @@ function Toolbar({
             ⊘ {depCount} ref{depCount !== 1 ? 's' : ''}
           </button>
         )}
-        {totalIssues === 0 && (
-          <span className="text-xs text-emerald-500 px-1">✓ Valid</span>
-        )}
+        {totalIssues === 0 && <span className="text-xs text-emerald-500 px-1">✓ Valid</span>}
       </div>
 
       <div className="flex items-center gap-1 ml-auto shrink-0">
-        {onOpenSearch && (
-          <ToolBtn onClick={onOpenSearch} title="Search (⌘K)">⌕</ToolBtn>
-        )}
-        <ToolBtn onClick={onToggleSidebar} title={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}>
-          {sidebarOpen ? '◂' : '▸'}
-        </ToolBtn>
+        {onOpenSearch && <ToolBtn onClick={onOpenSearch} title="Search (⌘F / Ctrl+F)">⌕</ToolBtn>}
+        <ToolBtn onClick={onToggleSidebar} title={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}>{sidebarOpen ? '◂' : '▸'}</ToolBtn>
         <ToolBtn onClick={onNewFile}>Load file</ToolBtn>
         <ToolBtn onClick={onDiff} active={isDiff}>⇄ Diff</ToolBtn>
         <ToolBtn onClick={onExport} accent>↓ Annotated</ToolBtn>
@@ -289,9 +256,5 @@ function ToolBtn({ children, onClick, active, accent, title }) {
       : active
         ? `${base} bg-slate-600 text-slate-100`
         : `${base} bg-slate-700/50 hover:bg-slate-600/50 text-slate-400 hover:text-slate-200`
-  return (
-    <button type="button" onClick={onClick} className={style} title={title}>
-      {children}
-    </button>
-  )
+  return <button type="button" onClick={onClick} className={style} title={title}>{children}</button>
 }

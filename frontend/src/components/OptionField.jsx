@@ -1,219 +1,177 @@
+import { useState } from 'react'
 import InfoPopover from './InfoPopover.jsx'
-import SelectionCutsDictEditor from './SelectionCutsDictEditor.jsx'
 import CollectionField from './CollectionField.jsx'
+import SelectionCutsEditor from './SelectionCutsEditor.jsx'
 import { getAutocompleteMode } from '../utils/collectionRegistry.js'
+import { isExpertOption, isRequiredOption, optionChoices } from '../utils/schema.js'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-function parseTypedValue(raw, type) {
-  if (raw === '' || raw === null || raw === undefined) return raw
-  if (type === 'int') {
-    const n = parseInt(raw, 10)
-    return isNaN(n) ? raw : n
-  }
-  if (type === 'float') {
-    const n = parseFloat(raw)
-    return isNaN(n) ? raw : n
-  }
-  if (type === 'list') {
-    if (typeof raw === 'string') {
-      try { return JSON.parse(raw) } catch { /* fall through */ }
-      return raw.split(',').map(s => s.trim()).filter(Boolean)
-    }
-  }
-  return raw
+const INPUT = 'w-full bg-slate-900 border border-slate-600 rounded px-2 py-1 text-xs text-slate-200 font-mono ' +
+              'focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 placeholder:text-slate-600'
+
+function parseNumber(raw, type) {
+  if (raw === '' || raw === null || raw === undefined) return ''
+  const n = type === 'int' ? parseInt(raw, 10) : parseFloat(raw)
+  return Number.isNaN(n) ? raw : n
 }
 
-function displayValue(value, type) {
-  if (value === null || value === undefined) return ''
-  if (Array.isArray(value)) return value.join(', ')
-  return String(value)
+function placeholderFor(opt, inheritedValue) {
+  if (inheritedValue !== undefined) return `inherits ${formatValue(inheritedValue)}`
+  if (isRequiredOption(opt)) return 'required'
+  if (opt.default !== null && opt.default !== undefined && opt.default !== '') return formatValue(opt.default)
+  return ''
 }
 
-// ── Sub-components ────────────────────────────────────────────────────────────
+function formatValue(v) {
+  if (Array.isArray(v)) return v.length ? v.join(', ') : '[]'
+  if (v && typeof v === 'object') return JSON.stringify(v)
+  return String(v)
+}
 
-function BoolField({ value, onChange, defaultValue }) {
-  const effective = (value === true || value === false) ? value : defaultValue
+// ── Field types ───────────────────────────────────────────────────────────────
+
+function BoolField({ value, onChange, defaultValue, inheritedValue }) {
+  const effective = (value === true || value === false) ? value : (inheritedValue ?? defaultValue)
   const isOn = effective === true
+  const explicit = value === true || value === false
   return (
     <div className="flex items-center gap-2 mt-1">
-      <button
-        type="button"
-        role="switch"
-        aria-checked={isOn}
-        onClick={() => onChange(!isOn)}
-        className={`relative inline-flex w-9 h-5 rounded-full transition-colors duration-200 focus:outline-none ${
-          isOn ? 'bg-blue-500' : 'bg-slate-600'
-        }`}
-      >
-        <span
-          className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200 ${
-            isOn ? 'translate-x-4' : 'translate-x-0'
-          }`}
-        />
+      <button type="button" role="switch" aria-checked={isOn} onClick={() => onChange(!isOn)}
+        className={`relative inline-flex w-9 h-5 rounded-full transition-colors duration-200 focus:outline-none ${isOn ? 'bg-blue-500' : 'bg-slate-600'}`}>
+        <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200 ${isOn ? 'translate-x-4' : 'translate-x-0'}`} />
       </button>
-      <span className={`text-xs ${isOn ? 'text-slate-100' : 'text-slate-400'}`}>
-        {String(isOn)}
-      </span>
+      <span className={`text-xs ${isOn ? 'text-slate-100' : 'text-slate-400'}`}>{String(isOn)}</span>
+      {!explicit && <span className="text-xs text-slate-600 italic">(default)</span>}
+      {explicit && <button type="button" onClick={() => onChange('')} className="text-xs text-slate-600 hover:text-slate-400" title="Back to default">reset</button>}
     </div>
   )
 }
 
-function StringField({ opt, value, onChange, blockName }) {
-  const useCollection = getAutocompleteMode(opt.name, blockName)
-
-  if (useCollection) {
-    return (
-      <CollectionField
-        optName={opt.name}
-        value={value ?? ''}
-        onChange={onChange}
-      />
-    )
-  }
-
-  const isMultiline = opt.name === 'selectionCuts' || opt.info?.includes('\n')
-
-  if (isMultiline) {
-    return (
-      <textarea
-        value={value ?? ''}
-        onChange={e => onChange(e.target.value)}
-        rows={4}
-        className="w-full bg-slate-900 border border-slate-600 rounded px-2 py-1.5 text-xs text-slate-200 font-mono
-                   focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30
-                   resize-y placeholder:text-slate-600"
-        placeholder={opt.required ? 'required' : opt.default != null ? String(opt.default) : ''}
-        spellCheck={false}
-      />
-    )
-  }
-
+function ChoiceField({ opt, value, onChange, choices }) {
+  const known = choices.some(c => String(c) === String(value))
   return (
-    <input
-      type="text"
-      value={value ?? ''}
-      onChange={e => onChange(e.target.value)}
-      className="w-full bg-slate-900 border border-slate-600 rounded px-2 py-1 text-xs text-slate-200 font-mono
-                 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30
-                 placeholder:text-slate-600"
-      placeholder={opt.required ? 'required' : opt.default != null ? String(opt.default) : ''}
-    />
+    <select value={value ?? ''} onChange={e => onChange(e.target.value)} className={INPUT}>
+      <option value="">{opt.default !== '' && opt.default != null ? `default (${formatValue(opt.default)})` : '— unset —'}</option>
+      {!known && value !== '' && value != null && <option value={value}>{String(value)} (not in choices)</option>}
+      {choices.map(c => <option key={String(c)} value={c}>{String(c)}</option>)}
+    </select>
   )
 }
 
-function NumberField({ opt, value, onChange }) {
+function NumberField({ opt, value, onChange, placeholder }) {
   return (
-    <input
-      type="number"
-      value={value ?? ''}
-      onChange={e => onChange(parseTypedValue(e.target.value, opt.type))}
-      step={opt.type === 'float' ? 'any' : 1}
-      className="w-full bg-slate-900 border border-slate-600 rounded px-2 py-1 text-xs text-slate-200 font-mono
-                 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30
-                 placeholder:text-slate-600"
-      placeholder={opt.default != null ? String(opt.default) : ''}
-    />
+    <div className="flex items-center gap-2">
+      <input type="number" value={value ?? ''} onChange={e => onChange(parseNumber(e.target.value, opt.type))}
+        step={opt.type === 'float' ? 'any' : 1} className={INPUT} placeholder={placeholder} />
+      {opt.physicalUnit && <span className="text-xs text-slate-500 shrink-0" title="Physical unit (from the option's help text)">{opt.physicalUnit}</span>}
+    </div>
   )
 }
 
-function ListField({ opt, value, onChange }) {
+/** Comma-separated for scalar lists; JSON editing when the list holds objects. */
+function ListField({ value, onChange, placeholder }) {
+  const isComplex = Array.isArray(value) && value.some(v => v && typeof v === 'object')
+  if (isComplex) return <JsonField value={value} onChange={onChange} expect="array" />
   const display = Array.isArray(value) ? value.join(', ') : (value ?? '')
   return (
-    <input
-      type="text"
-      value={display}
-      onChange={e => onChange(parseTypedValue(e.target.value, 'list'))}
-      className="w-full bg-slate-900 border border-slate-600 rounded px-2 py-1 text-xs text-slate-200 font-mono
-                 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30
-                 placeholder:text-slate-600"
-      placeholder="comma-separated values"
-    />
+    <input type="text" value={display}
+      onChange={e => onChange(e.target.value.split(',').map(s => s.trim()).filter(Boolean))}
+      className={INPUT} placeholder={placeholder || 'comma-separated values'} />
   )
 }
 
+function JsonField({ value, onChange, expect }) {
+  const [text, setText] = useState(() => (value && typeof value === 'object') ? JSON.stringify(value, null, 1) : (value ?? ''))
+  const [err, setErr] = useState(null)
+  function handle(t) {
+    setText(t)
+    if (t.trim() === '') { setErr(null); onChange(''); return }
+    try {
+      const parsed = JSON.parse(t)
+      const ok = expect === 'array' ? Array.isArray(parsed) : (parsed && typeof parsed === 'object' && !Array.isArray(parsed))
+      if (!ok) throw new Error(`expected a JSON ${expect === 'array' ? 'array' : 'object'}`)
+      setErr(null)
+      onChange(parsed)
+    } catch (e) {
+      setErr(e.message)
+    }
+  }
+  return (
+    <div>
+      <textarea value={text} onChange={e => handle(e.target.value)} rows={3} spellCheck={false}
+        className={`${INPUT} resize-y ${err ? 'border-red-500' : ''}`} placeholder={expect === 'array' ? '[ ... ]' : '{ "key": value }'} />
+      {err && <p className="text-xs text-red-400 mt-0.5">{err}</p>}
+    </div>
+  )
+}
+
+function StringField({ opt, value, onChange, blockDef, isSub, placeholder, keywords }) {
+  const multiline = opt.meta?.multiline || opt.name === 'selectionCuts'
+  if (opt.name === 'selectionCuts') {
+    return <SelectionCutsEditor value={value ?? ''} onChange={onChange} keywords={keywords} />
+  }
+  if (multiline) {
+    return (
+      <textarea value={value ?? ''} onChange={e => onChange(e.target.value)} rows={4} spellCheck={false}
+        className={`${INPUT} resize-y`} placeholder={placeholder} />
+    )
+  }
+  if (getAutocompleteMode(opt, { isSub, blockDef })) {
+    return <CollectionField optName={opt.name} value={value ?? ''} onChange={onChange} placeholder={placeholder} />
+  }
+  return <input type="text" value={value ?? ''} onChange={e => onChange(e.target.value)} className={INPUT} placeholder={placeholder} />
+}
 
 // ── Main component ─────────────────────────────────────────────────────────────
 
 /**
- * Renders a single option row.
- *
- * Props:
- *   option     – option definition from schema { name, type, default, info, required, noneAction }
- *                (passed as `option` prop by callers; aliased to `opt` internally)
- *   value      – current value (from block instance options)
- *   onChange   – (newValue) => void
- *   blockName  – name of the parent block (for collection autocomplete + data-option attribute)
- *   depIssues  – array of dependency issues from checkDepsFromState (optional)
+ * One option row: label (name, type, required, expert, unit, info, default)
+ * and the input widget chosen from the option's type and metadata.
  */
-export default function OptionField({ option: opt, value, onChange, blockName, depIssues }) {
-  const depWarning = depIssues?.find(i => i.path.endsWith(`.${opt.name}`))?.message
-
-  const isRequired = opt.required || opt.noneAction === 'error'
+export default function OptionField({
+  option: opt, value, onChange, blockName, blockDef, isSub = false, inheritedValue, depIssue, keywords,
+}) {
+  const placeholder = placeholderFor(opt, inheritedValue)
+  const choices = optionChoices(opt)
 
   function renderInput() {
-    const type = opt.type
-
-    if (type === 'bool') {
-      return <BoolField value={value} onChange={onChange} defaultValue={opt.default} />
-    }
-    if (type === 'int' || type === 'float') {
-      return <NumberField opt={opt} value={value} onChange={onChange} />
-    }
-    if (type === 'list') {
-      return <ListField opt={opt} value={value} onChange={onChange} />
-    }
-    if (opt.name === 'selectionCutsDict') {
-      return <SelectionCutsDictEditor value={value || {}} onChange={onChange} />
-    }
-    return <StringField opt={opt} value={value} onChange={onChange} blockName={blockName} />
+    if (opt.type === 'bool') return <BoolField value={value} onChange={onChange} defaultValue={opt.default} inheritedValue={inheritedValue} />
+    if (choices) return <ChoiceField opt={opt} value={value} onChange={onChange} choices={choices} />
+    if (opt.type === 'int' || opt.type === 'float') return <NumberField opt={opt} value={value} onChange={onChange} placeholder={placeholder} />
+    if (opt.type === 'list') return <ListField value={value} onChange={onChange} placeholder={placeholder} />
+    if (opt.type === 'dict') return <JsonField value={value} onChange={onChange} expect="object" />
+    return <StringField opt={opt} value={value} onChange={onChange} blockDef={blockDef} isSub={isSub} placeholder={placeholder} keywords={keywords} />
   }
 
   return (
-    <div
-      data-option={`${blockName}:${opt.name}`}
-      className="py-2 border-b border-slate-800/60 last:border-0"
-    >
-      {/* Label row */}
+    <div data-option={`${blockName}:${opt.name}`} className="py-2 border-b border-slate-800/60 last:border-0">
       <div className="flex items-center gap-1 mb-1 min-w-0">
-        <span className="text-xs font-mono text-blue-300 shrink-0">
-          {opt.name}
-        </span>
-
-        {/* Type badge */}
-        {opt.type && (
-          <span className="text-xs text-slate-600 font-mono shrink-0">
-            ({opt.type})
+        <span className="text-xs font-mono text-blue-300 shrink-0">{opt.name}</span>
+        {opt.type && <span className="text-xs text-slate-600 font-mono shrink-0">({opt.type})</span>}
+        {isRequiredOption(opt) && <span className="text-xs text-amber-500 shrink-0" title="Required">*</span>}
+        {isExpertOption(opt) && (
+          <span className="text-xs px-1 rounded bg-purple-900/50 text-purple-300 shrink-0"
+            title={`Expert-only${opt.expertMode[0] === true ? ' (any non-default value)' : ` values: ${opt.expertMode.join(', ')}`} — needs CommonServices.enableExpertMode`}>
+            expert
           </span>
         )}
-
-        {/* Required badge */}
-        {isRequired && (
-          <span className="text-xs text-amber-500 shrink-0" title="Required">
-            *
-          </span>
+        {inheritedValue !== undefined && (
+          <span className="text-xs text-slate-500 shrink-0" title="Propagated from the parent block unless set here">↳ inherited</span>
         )}
-
-        {/* Info popover */}
         {opt.info && <InfoPopover info={opt.info} />}
-
-        {/* Default value hint */}
-        {opt.default != null && opt.default !== '' && (
+        {opt.default !== null && opt.default !== undefined && opt.default !== '' && (
           <span className="text-xs text-slate-700 ml-auto shrink-0 font-mono truncate max-w-[120px]"
-                title={`Default: ${Array.isArray(opt.default) ? JSON.stringify(opt.default) : String(opt.default)}`}>
-            ={Array.isArray(opt.default) ? '[…]' : String(opt.default).substring(0, 20)}
+            title={`Default: ${formatValue(opt.default)}${opt.factoryDefault !== null && opt.factoryDefault !== undefined ? ' (set by the factory)' : ''}`}>
+            ={formatValue(opt.default).substring(0, 20)}
           </span>
         )}
       </div>
 
-      {/* Input */}
       {renderInput()}
 
-      {/* Dependency warning */}
-      {depWarning && (
-        <p className="text-xs text-orange-400 mt-0.5 flex items-center gap-1">
-          <span>⊘</span> {depWarning}
-        </p>
+      {depIssue && (
+        <p className="text-xs text-orange-400 mt-0.5 flex items-center gap-1"><span>⊘</span> {depIssue}</p>
       )}
     </div>
   )

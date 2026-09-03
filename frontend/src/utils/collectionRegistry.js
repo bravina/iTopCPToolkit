@@ -1,300 +1,134 @@
 /**
  * collectionRegistry.js
  *
- * Builds a "registry" of known physics-object containers and their named
- * selections from either:
- *   - The builder's useConfig state (live editing mode)
- *   - A parsed YAML config object (reader mode)
+ * Registry of physics-object containers and named selections defined by a
+ * config, consumed by CollectionField (autocomplete) and dependencyChecker.
  *
- * The registry is consumed by:
- *   - CollectionField      → autocomplete suggestions while typing
- *   - dependencyChecker    → warns when a referenced container/selection
- *                            doesn't exist
+ * What an option *means* comes from the upstream `meta.role` on the option
+ * (container | containerRef | selection) when the block declares it.  Until
+ * every block does, `optionRole` falls back to naming conventions — the
+ * fallback is deliberately the only place such heuristics live.
  *
  * Registry shape:
  *   {
  *     collections:    [{ name, type, blockName }],
  *     selections:     [{ name, container, type }],
- *     byType:         { jets: [{ name, blockName }], electrons: [...], ... },
- *     withSelections: ["AnaJets.baselineJvt", ...]   // convenience flat list
+ *     byType:         { jets: [...], electrons: [...], ... },
+ *     withSelections: ["AnaJets.baselineJvt", ...]
  *   }
  */
 
-// ─────────────────────────────────────────────────────────────────────────────
-// CONFIGURATION MAPS
-// ─────────────────────────────────────────────────────────────────────────────
+import { walkState, walkYaml } from './configWalk.js'
 
-/**
- * Maps GUI block names to the physics-object type string they produce.
- * null   → block is skipped (produces no container)
- * string → the type tag added to the registry entry
- *
- * Add an entry here when adding a new block that defines a new container.
- */
-export const DEFINING_BLOCK_TYPES = {
-  Jets:                     'jets',
-  Electrons:                'electrons',
-  Muons:                    'muons',
-  Photons:                  'photons',
-  TauJets:                  'taus',
-  DiTauJets:                'ditaus',
-  MissingET:                'met',
-  JetReclustering:          'jets',
-  ReclusteredJetCalibration:'jets',
-  PL_Jets:                  'jets',
-  PL_Electrons:             'electrons',
-  PL_Muons:                 'muons',
-  PL_Photons:               'photons',
-  PL_Taus:                  'taus',
-  PL_Neutrinos:             'neutrinos',
-  PL_Resonances:            'resonances',
-  InDetTracks:              'tracks',
-  CommonServices:           null,   // produces no container; explicitly skipped
-  EventInfo:                null,
+// ── Object-type inference (fallback only, used to filter suggestions) ─────────
+
+const TYPE_PATTERNS = [
+  ['taus',      /^tau|taus?\b|ditau/],
+  ['jets',      /jets?\b|ljet|fatjet|largerjet/],
+  ['electrons', /electron/],
+  ['muons',     /muon/],
+  ['photons',   /photon/],
+  ['met',       /^met$|\bmet\b|missinget/],
+  ['tracks',    /track/],
+]
+
+/** Physics-object type implied by an option or block name, or null. */
+export function inferFieldType(name) {
+  const n = String(name || '').toLowerCase()
+  for (const [type, re] of TYPE_PATTERNS) if (re.test(n)) return type
+  return null
 }
 
-/**
- * Sub-block names whose `selectionName` option defines a named selection on
- * the parent container (e.g. WorkingPoint adds a selection like "tight").
- */
-const SELECTION_DEFINING_SUBBLOCKS = new Set([
-  'WorkingPoint', 'JVT', 'PtEtaSelection', 'BJetCalib',
-  'FlavourTagging', 'Uncertainties',
-])
-
-// ─────────────────────────────────────────────────────────────────────────────
-// SCHEMA HELPERS (used to look up declared defaults)
-// ─────────────────────────────────────────────────────────────────────────────
-
-function getSchemaDefault(schema, blockName, optionName) {
-  const block = schema.find(b => b.name === blockName)
-  const opt = (block?.options || []).find(o => o.name === optionName)
-  return opt?.default
-}
-
-function getSubSchemaDefault(schema, blockName, subName, optionName) {
-  const block = schema.find(b => b.name === blockName)
-  const sub = (block?.sub_blocks || []).find(s => s.name === subName)
-  const opt = (sub?.options || []).find(o => o.name === optionName)
-  return opt?.default
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// CORE BUILDER
-// ─────────────────────────────────────────────────────────────────────────────
+// ── Option roles ──────────────────────────────────────────────────────────────
 
 /**
- * Shared logic for building the registry from a normalised list of instances.
- *
- * Each entry in `instances` has the shape:
- *   { containerName, selectionsBySubBlock, outputName, srcContainerName }
- *
- * This avoids duplicating the collection/selection accumulation logic between
- * the state-based and YAML-based entry points.
+ * Role of an option: 'container' (defines a container name), 'containerRef'
+ * (reads `container[.selection]`), 'selection' (defines a selection name),
+ * 'inherited' (containerName in a sub-block, propagated from the parent) or null.
  */
-function _buildRegistry(normalisedBlocks) {
+export function optionRole(opt, { isSub = false, blockDef = null } = {}) {
+  const declared = opt?.meta?.role
+  if (declared) return declared
+  const name = opt?.name || ''
+  if (name === 'containerName') {
+    if (isSub) return 'inherited'
+    const names = new Set((blockDef?.options || []).map(o => o.name))
+    // A root block that also names an output or a selection reads its container
+    return (names.has('outputName') || names.has('selectionName')) ? 'containerRef' : 'container'
+  }
+  if (name === 'outputName') return 'container'
+  if (name === 'selectionName') return 'selection'
+  if (name === 'selection' || name === 'preselection') return null
+  const n = name.toLowerCase()
+  if (inferFieldType(n) || /container|particles/.test(n)) return 'containerRef'
+  return null
+}
+
+/** Autocomplete mode for an option: 'collections+selections' or null. */
+export function getAutocompleteMode(opt, ctx) {
+  return optionRole(opt, ctx) === 'containerRef' ? 'collections+selections' : null
+}
+
+// ── Registry construction ─────────────────────────────────────────────────────
+
+function valueOrDefault(options, opt) {
+  const v = options?.[opt.name]
+  if (v !== undefined && v !== null && v !== '') return v
+  return opt.default
+}
+
+function buildRegistry(walked) {
   const collections = []
   const selections = []
+  const addCollection = (name, type, blockName) => {
+    if (typeof name !== 'string' || !name) return
+    if (!collections.some(c => c.name === name)) collections.push({ name, type: type ?? 'any', blockName })
+  }
+  const addSelection = (name, container, type) => {
+    if (typeof name !== 'string' || !name || typeof container !== 'string' || !container) return
+    const c = container.split('.')[0]
+    if (!selections.some(s => s.name === name && s.container === c)) selections.push({ name, container: c, type: type ?? 'any' })
+  }
 
-  for (const { blockName, objType, instances } of normalisedBlocks) {
-    if (objType === null) continue  // explicitly skipped block
+  for (const { def, instances } of walked) {
+    const objType = inferFieldType(def.name)
+    const roles = (def.options || []).map(o => [o, optionRole(o, { blockDef: def })])
+    const containerOpt = (def.options || []).find(o => o.name === 'containerName')
 
-    for (const { containerName, selectionsBySubBlock, outputName, srcContainerRef } of instances) {
-
-      // Register the container produced by this block
-      if (objType !== undefined && containerName) {
-        if (!collections.find(c => c.name === containerName)) {
-          collections.push({ name: containerName, type: objType, blockName })
-        }
-
-        // Register selections from enabled sub-blocks
-        for (const { selectionName } of (selectionsBySubBlock || [])) {
-          if (selectionName && !selections.find(s => s.name === selectionName && s.container === containerName)) {
-            selections.push({ name: selectionName, container: containerName, type: objType })
-          }
-        }
+    for (const { options, subs } of instances) {
+      for (const [opt, role] of roles) {
+        if (role === 'container') addCollection(valueOrDefault(options, opt), objType, def.name)
       }
-
-      // Thinning block: outputName creates an alias container
-      if (outputName) {
-        const srcEntry = collections.find(c => c.name === srcContainerRef?.split('.')[0])
-        if (!collections.find(c => c.name === outputName)) {
-          collections.push({ name: outputName, type: srcEntry?.type ?? 'any', blockName })
+      const container = containerOpt ? valueOrDefault(options, containerOpt) : null
+      for (const [opt, role] of roles) {
+        if (role === 'selection' && container) addSelection(valueOrDefault(options, opt), container, objType)
+      }
+      for (const { def: sd, options: so } of subs) {
+        const subContainer = (so.containerName && String(so.containerName)) || container
+        for (const o of sd.options || []) {
+          const role = optionRole(o, { isSub: true, blockDef: sd })
+          if (role === 'selection' && subContainer) addSelection(valueOrDefault(so, o), subContainer, objType)
+          else if (role === 'container') addCollection(valueOrDefault(so, o), objType, sd.name)
         }
       }
     }
   }
 
-  return _finalise(collections, selections)
-}
-
-function _finalise(collections, selections) {
-  // Index by type for fast lookup in CollectionField
   const byType = {}
   for (const c of collections) {
-    if (c.type && c.type !== 'any') {
-      if (!byType[c.type]) byType[c.type] = []
-      byType[c.type].push(c)
-    }
+    if (c.type && c.type !== 'any') (byType[c.type] ??= []).push(c)
   }
-
-  // Flat list of "container.selection" strings
-  const withSelections = selections.map(s => `${s.container}.${s.name}`)
-
-  return { collections, selections, byType, withSelections }
+  return { collections, selections, byType, withSelections: selections.map(s => `${s.container}.${s.name}`) }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// PUBLIC ENTRY POINTS
-// ─────────────────────────────────────────────────────────────────────────────
+export const EMPTY_REGISTRY = Object.freeze({ collections: [], selections: [], byType: {}, withSelections: [] })
 
-/**
- * Build registry from the builder's useConfig state + schema.
- * Called in App.jsx whenever the live config changes.
- */
-export function buildRegistryFromState(configState, schema) {
-  const normalisedBlocks = []
-
-  for (const [blockName, blockState] of Object.entries(configState || {})) {
-    if (!blockState?.enabled) continue
-    const objType = DEFINING_BLOCK_TYPES[blockName]
-
-    const instances = (blockState.instances || []).map(inst => {
-      const containerName =
-        (inst.options?.containerName || '') ||
-        getSchemaDefault(schema, blockName, 'containerName')
-
-      // Collect (selectionName) from enabled selection-defining sub-blocks
-      const selectionsBySubBlock = []
-      for (const [subName, subState] of Object.entries(inst.sub_blocks || {})) {
-        if (!subState?.enabled || !SELECTION_DEFINING_SUBBLOCKS.has(subName)) continue
-        for (const si of (subState.instances || [])) {
-          const selectionName =
-            (si.options?.selectionName || '') ||
-            getSubSchemaDefault(schema, blockName, subName, 'selectionName')
-          if (selectionName) selectionsBySubBlock.push({ selectionName })
-        }
-
-        // JVT always implicitly creates "baselineJvt"
-        if (subName === 'JVT') {
-          selectionsBySubBlock.push({ selectionName: 'baselineJvt' })
-        }
-      }
-
-      return {
-        containerName: typeof containerName === 'string' ? containerName : null,
-        selectionsBySubBlock,
-        // Thinning fields
-        outputName: blockName === 'Thinning' ? (inst.options?.outputName || null) : null,
-        srcContainerRef: blockName === 'Thinning' ? (inst.options?.containerName || null) : null,
-      }
-    })
-
-    normalisedBlocks.push({ blockName, objType, instances })
-  }
-
-  return _buildRegistry(normalisedBlocks)
+/** Registry from the builder state; `blocks` is the effective block list. */
+export function buildRegistryFromState(config, blocks) {
+  return buildRegistry(walkState(config, blocks))
 }
 
-/**
- * Build registry from a parsed YAML config object + schema.
- * Called in ConfigReader when a file is loaded.
- */
-export function buildRegistryFromYaml(configObj, schema) {
-  const normalisedBlocks = []
-
-  for (const [blockName, blockValue] of Object.entries(configObj || {})) {
-    const objType = DEFINING_BLOCK_TYPES[blockName]
-    const rawInstances = Array.isArray(blockValue) ? blockValue : [blockValue ?? {}]
-
-    const instances = rawInstances.map(inst => {
-      if (!inst || typeof inst !== 'object') return {}
-
-      const containerName =
-        inst.containerName ??
-        getSchemaDefault(schema, blockName, 'containerName')
-
-      // Collect selections from sub-block entries present in the YAML
-      const selectionsBySubBlock = []
-      for (const [subName, subVal] of Object.entries(inst)) {
-        if (!SELECTION_DEFINING_SUBBLOCKS.has(subName)) continue
-        const subInstances = Array.isArray(subVal) ? subVal : [subVal ?? {}]
-        for (const si of subInstances) {
-          const selectionName =
-            si?.selectionName ??
-            getSubSchemaDefault(schema, blockName, subName, 'selectionName')
-          if (selectionName) selectionsBySubBlock.push({ selectionName })
-        }
-      }
-
-      return {
-        containerName: typeof containerName === 'string' ? containerName : null,
-        selectionsBySubBlock,
-        outputName: blockName === 'Thinning' ? (inst.outputName || null) : null,
-        srcContainerRef: blockName === 'Thinning' ? (inst.containerName || null) : null,
-      }
-    })
-
-    normalisedBlocks.push({ blockName, objType, instances })
-  }
-
-  return _buildRegistry(normalisedBlocks)
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// FIELD-LEVEL HELPERS (used by OptionField / CollectionField)
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Infer the expected physics-object type from an option name.
- * Returns a type string matching the keys in DEFINING_BLOCK_TYPES, or null.
- *
- * Add patterns here if a new object type is introduced.
- */
-export function inferFieldType(optName) {
-  const n = optName.toLowerCase()
-  if (/\bjet\b|jets\b|ljet|largerjet/.test(n)) return 'jets'
-  if (/electron/.test(n))                       return 'electrons'
-  if (/muon/.test(n))                           return 'muons'
-  if (/photon/.test(n))                         return 'photons'
-  if (/\btaus?\b/.test(n))                        return 'taus'
-  if (/\bmet\b|missinget/.test(n))              return 'met'
-  if (/\btrack/.test(n))                        return 'tracks'
-  return null  // unknown → suggest all containers
-}
-
-/**
- * Decide whether an option field should show collection autocomplete.
- *
- * Returns 'collections+selections' when the field expects a container
- * (possibly with a selection suffix), null otherwise.
- *
- * Rules:
- *  - outputName fields are user-defined names, never references → no autocomplete
- *  - containerName in a block that DEFINES collections → no autocomplete
- *  - Any option name that implies a physics object type → autocomplete
- */
-export function getAutocompleteMode(optName, blockName) {
-  const n = optName.toLowerCase()
-
-  if (n === 'outputname') return null
-
-  // containerName inside a defining block is the name the user invents, not a reference
-  if (n === 'containername' && blockName in DEFINING_BLOCK_TYPES) return null
-
-  if (
-    /\bjet\b|jets\b|ljet|largerjet/.test(n) ||
-    /electron/.test(n) ||
-    /muon/.test(n) ||
-    /photon/.test(n) ||
-    /\btaus?\b/.test(n) ||
-    /\bmet\b|missinget/.test(n) ||
-    /\btrack/.test(n) ||
-    /container/.test(n) ||
-    /particles/.test(n)
-  ) {
-    return 'collections+selections'
-  }
-
-  return null
+/** Registry from a parsed YAML object; `blocks` is the effective block list. */
+export function buildRegistryFromYaml(configObj, blocks) {
+  return buildRegistry(walkYaml(configObj, blocks))
 }

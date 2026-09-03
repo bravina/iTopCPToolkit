@@ -1,15 +1,8 @@
 /**
  * schemaLookup.js
  *
- * Converts the flat schema array returned by /api/schema into a fast
- * lookup structure indexed by block name.
- *
- * Used by yamlLineBuilder, yamlValidator, and dependencyChecker to avoid
- * repeated .find() scans over the schema array.
- */
-
-/**
- * Build a lookup map from the schema array.
+ * Converts a (effective) block list into a fast lookup indexed by block name.
+ * Used by yamlLineBuilder, yamlValidator, dependencyChecker and yamlToConfig.
  *
  * Returns:
  *   {
@@ -19,21 +12,26 @@
  *       subBlocksByName: { [subName]: { def, optionsByName } }
  *     }
  *   }
+ *
+ * The AddConfigBlocks pseudo-block is always present.
  */
-export function buildSchemaLookup(schema) {
-  const blocks = {}
-  for (const block of schema) {
-    blocks[block.name] = {
+
+import { ADD_CONFIG_BLOCKS_DEF } from './schema.js'
+
+function index(list) {
+  return Object.fromEntries((list || []).map(o => [o.name, o]))
+}
+
+export function buildSchemaLookup(blocks) {
+  const lookup = {}
+  for (const block of [ADD_CONFIG_BLOCKS_DEF, ...(blocks || [])]) {
+    lookup[block.name] = {
       def: block,
-      optionsByName: Object.fromEntries((block.options || []).map(o => [o.name, o])),
-      subBlocksByName: {},
-    }
-    for (const sub of (block.sub_blocks || [])) {
-      blocks[block.name].subBlocksByName[sub.name] = {
-        def: sub,
-        optionsByName: Object.fromEntries((sub.options || []).map(o => [o.name, o])),
-      }
+      optionsByName: index(block.options),
+      subBlocksByName: Object.fromEntries(
+        (block.subBlocks || []).map(sub => [sub.name, { def: sub, optionsByName: index(sub.options) }])
+      ),
     }
   }
-  return blocks
+  return lookup
 }

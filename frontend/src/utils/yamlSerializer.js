@@ -1,99 +1,106 @@
 /**
  * yamlSerializer.js
  *
- * Converts the builder's useConfig state into a plain JS object suitable for
- * YAML serialisation, then serialises it to a YAML string.
+ * Builder state → plain JS object → YAML string.
  *
- * The key concern here is omitting options that still hold their default values
- * so the output YAML stays minimal and readable.
+ * Rules (mirroring what TextConfig accepts):
+ *   - every block is written as a YAML list, even with one instance
+ *   - options equal to their (factory-merged) default are omitted
+ *   - `AddConfigBlocks` is written first, and only for custom blocks that are
+ *     actually used in the config
+ *   - blocks unknown to the schema (kept from an imported file) are written
+ *     back verbatim, so nothing is lost on a Reader → Builder → export round-trip
  */
 
 import yaml from 'js-yaml'
+import { ADD_CONFIG_BLOCKS, ADD_CONFIG_BLOCKS_KEYS, blocksForConfig, superBlockList } from './schema.js'
 
 /**
- * Build a plain JS object from the current builder config state.
- * Only enabled blocks are included; options at their default value are omitted.
+ * Loose default comparison.  '' / null / undefined count as "unset".
+ * Arrays and objects are compared by value.
  */
-export function buildYamlObject(configState, schema) {
-  if (!schema || !Object.keys(configState).length) return {}
-  const result = {}
-  for (const blockDef of schema) {
-    const blockState = configState[blockDef.name]
-    if (!blockState?.enabled) continue
-    if (blockDef.repeatable) {
-      result[blockDef.name] = blockState.instances.map(inst => serializeInstance(inst, blockDef))
-    } else {
-      result[blockDef.name] = serializeInstance(blockState.instances[0], blockDef)
+export function isDefault(value, defaultVal) {
+  if (value === '' || value === null || value === undefined) return true
+  if (defaultVal === null || defaultVal === undefined) return false
+  if (typeof defaultVal === 'object') return JSON.stringify(value) === JSON.stringify(defaultVal)
+  return value === defaultVal || String(value) === String(defaultVal)
+}
+
+/** Serialise one block or sub-block instance to a plain object (possibly {}). */
+export function serializeInstance(inst, blockDef) {
+  const byName = Object.fromEntries((blockDef?.options || []).map(o => [o.name, o]))
+  const out = {}
+  for (const [k, v] of Object.entries(inst?.options || {})) {
+    const def = byName[k]
+    if (def ? isDefault(v, def.default) : isDefault(v, undefined)) continue
+    out[k] = v
+  }
+  for (const subDef of (blockDef?.subBlocks || [])) {
+    const subState = inst?.subBlocks?.[subDef.name]
+    if (!subState?.enabled) continue
+    out[subDef.name] = subState.instances.map(si => serializeInstance(si, subDef))
+  }
+  return out
+}
+
+/** Custom entries whose block is enabled somewhere in the config. */
+export function usedCustomEntries(config) {
+  const used = []
+  for (const entry of config?.addConfigBlocks || []) {
+    const parents = superBlockList(entry.superBlocks)
+    if (parents.length === 0) {
+      if (config.blocks[entry.algName]?.enabled) used.push(entry)
+      continue
     }
+    const active = parents.some(p => {
+      const st = config.blocks[p]
+      return st?.enabled && st.instances.some(inst => inst.subBlocks?.[entry.algName]?.enabled)
+    })
+    if (active) used.push(entry)
+  }
+  return used
+}
+
+function compactEntry(entry) {
+  const out = {}
+  for (const k of ADD_CONFIG_BLOCKS_KEYS) {
+    if (entry[k] !== null && entry[k] !== undefined && entry[k] !== '') out[k] = entry[k]
+  }
+  return out
+}
+
+/**
+ * Plain object for the whole config.  `schema` is the /api/schema document
+ * (only `blocks` is used); custom blocks come from the config itself.
+ */
+export function buildYamlObject(config, schema) {
+  const result = {}
+  if (!config || !schema) return result
+  const blocks = blocksForConfig(schema, config)
+
+  const used = usedCustomEntries(config)
+  if (used.length) result[ADD_CONFIG_BLOCKS] = used.map(compactEntry)
+
+  for (const def of blocks) {
+    const st = config.blocks[def.name]
+    if (!st?.enabled) continue
+    result[def.name] = st.instances.map(inst => serializeInstance(inst, def))
+  }
+  for (const [name, raw] of Object.entries(config.unknown || {})) {
+    if (!(name in result)) result[name] = raw
   }
   return result
 }
 
-/**
- * Loose equality check for option defaults.
- * Treats '' and undefined as "unset" (treated as default).
- * Uses JSON.stringify for arrays/objects to compare by value.
- */
-function isDefault(value, defaultVal) {
-  if (value === '' || value === undefined) return true
-  if (defaultVal === null || defaultVal === undefined) return false
-  if (typeof defaultVal === 'object') {
-    return JSON.stringify(value) === JSON.stringify(defaultVal)
-  }
-  return value === defaultVal || String(value) === String(defaultVal)
+/** Dump each top-level block separately, joined by blank lines. */
+export function objectToYaml(obj) {
+  const keys = Object.keys(obj)
+  if (!keys.length) return '# No blocks enabled yet\n'
+  return keys.map(key =>
+    yaml.dump({ [key]: obj[key] }, { lineWidth: 120, sortKeys: false, quotingType: "'", noRefs: true })
+  ).join('\n')
 }
 
-/**
- * Serialise a single block or sub-block instance.
- * Returns a plain object of non-default options plus any enabled sub-blocks,
- * or null if everything is at its default (so the block renders as {}).
- */
-function serializeInstance(inst, blockDef) {
-  const optDefaults = Object.fromEntries((blockDef.options || []).map(o => [o.name, o.default]))
-  const opts = {}
-
-  for (const [k, v] of Object.entries(inst?.options || {})) {
-    if (isDefault(v, optDefaults[k])) continue
-    opts[k] = v
-  }
-
-  for (const subDef of (blockDef.sub_blocks || [])) {
-    const subState = inst?.sub_blocks?.[subDef.name]
-    if (!subState?.enabled) continue
-    if (subDef.repeatable) {
-      opts[subDef.name] = subState.instances.map(si => serializeInstance(si, subDef))
-    } else {
-      opts[subDef.name] = serializeInstance(subState.instances[0], subDef)
-    }
-  }
-
-  return Object.keys(opts).length ? opts : null
-}
-
-/**
- * Replace null values (empty blocks) with {} so the YAML output shows "MyBlock: {}"
- * instead of "MyBlock: null".
- */
-function replaceNulls(v) {
-  if (v === null) return {}
-  if (Array.isArray(v)) return v.map(replaceNulls)
-  if (v && typeof v === 'object') {
-    return Object.fromEntries(Object.entries(v).map(([k, val]) => [k, replaceNulls(val)]))
-  }
-  return v
-}
-
-/**
- * Serialise the builder config state to a YAML string.
- * Each top-level block is dumped separately and joined with blank lines
- * to make the output easy to read.
- */
-export function toYamlString(configState, schema) {
-  const obj = buildYamlObject(configState, schema)
-  if (!Object.keys(obj).length) return '# No blocks enabled yet\n'
-
-  const blocks = Object.entries(replaceNulls(obj)).map(([key, value]) =>
-    yaml.dump({ [key]: value }, { lineWidth: 120, sortKeys: false, quotingType: "'", noRefs: true })
-  )
-  return blocks.join('\n')
+export function toYamlString(config, schema) {
+  return objectToYaml(buildYamlObject(config, schema))
 }
