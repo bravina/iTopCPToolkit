@@ -280,6 +280,7 @@ export default function App() {
       onLoadExample={handleLoadExample}
       onNewConfig={handleNewConfig}
       canIntrospect={versions.athena === true}
+      catalogueHint={catalogueHint(schema)}
     />
   )
 
@@ -435,6 +436,15 @@ export default function App() {
       </div>
     </RegistryProvider>
   )
+}
+
+/** Why the TopCPToolkit catalogue is empty, as precisely as the backend can tell. */
+function catalogueHint(schema) {
+  const v = schema.versions || {}
+  if (schema.source !== 'athena') return 'No catalogue in snapshot mode — run the app inside the Docker image.'
+  if (!v.tct) return 'No TopCPToolkit in this image — build it with TCT_VERSION to preload its blocks.'
+  if (!schema.tctDataDir) return `TopCPToolkit ${v.tct} is built, but its reference configs were not found (see the backend log: data dir missing or a dangling symlink).`
+  return `TopCPToolkit ${v.tct} is built, but none of its reference configs declares AddConfigBlocks.`
 }
 
 function Badge({ tone, full, short }) {

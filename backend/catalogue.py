@@ -44,13 +44,25 @@ ENTRY_KEYS = ("modulePath", "functionName", "algName")
 def find_tct_data_dir() -> Optional[str]:
     """
     Directory holding ``configs/``: ``$TCT_DATA_DIR`` if set, else the first
-    match of ``TCT_DATA_GLOB``.  None when TCT is not built into the image.
+    match of ``TCT_DATA_GLOB``.  None when TCT is not built into the image —
+    the reason is logged so an empty catalogue is never a mystery.
     """
     env = os.environ.get("TCT_DATA_DIR")
     candidates = [env] if env else sorted(glob.glob(TCT_DATA_GLOB))
+    if not candidates:
+        logger.warning("No TopCPToolkit data directory matches %s — no catalogue / templates",
+                       env or TCT_DATA_GLOB)
+        return None
     for c in candidates:
-        if c and os.path.isdir(os.path.join(c, CONFIG_SUBDIR)):
+        configs = os.path.join(c, CONFIG_SUBDIR)
+        if os.path.isdir(configs):
             return c
+        if os.path.islink(configs) and not os.path.exists(configs):
+            logger.warning("%s is a dangling symlink to %s — was the TCT source tree deleted "
+                           "after the build? (Athena installs share/ files as symlinks)",
+                           configs, os.readlink(configs))
+        else:
+            logger.warning("%s has no %s/ sub-directory", c, CONFIG_SUBDIR)
     return None
 
 

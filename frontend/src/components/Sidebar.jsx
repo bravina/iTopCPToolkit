@@ -9,7 +9,7 @@ import { categorize, superBlockList, TCT_CATEGORY } from '../utils/schema.js'
 export default function Sidebar({
   blocks, categories, config, selected, onSelect, onToggle, onAddInstance, docsUrl, depIssues,
   catalogue = [], onAddCatalogueEntry, onAddCustomEntry, onRemoveCustom, onRemoveUnknown,
-  examples = [], onLoadExample, onNewConfig, canIntrospect,
+  examples = [], onLoadExample, onNewConfig, canIntrospect, catalogueHint,
 }) {
   const depCounts = {}
   for (const issue of depIssues || []) {
@@ -78,9 +78,7 @@ export default function Sidebar({
               Custom blocks
             </p>
             {available.length === 0 && catalogue.length === 0 && (
-              <p className="px-4 py-1 text-xs text-slate-600 italic">
-                No TopCPToolkit catalogue — build the image with TCT_VERSION to preload its blocks.
-              </p>
+              <p className="px-4 py-1 text-xs text-slate-600 italic">{catalogueHint}</p>
             )}
             {available.map(entry => <CatalogueRow key={`${entry.modulePath}.${entry.functionName}.${entry.algName}`} entry={entry} onAdd={onAddCatalogueEntry} />)}
             {onAddCustomEntry && <CustomBlockForm onAdd={onAddCustomEntry} canIntrospect={canIntrospect} />}

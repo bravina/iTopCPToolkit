@@ -49,7 +49,13 @@ RUN dnf install -y \
 # TCT_VERSION controls behaviour:
 #   (not set / empty) → skip, no TCT in the image
 #   "latest"          → clone main branch
-#   any other value   → treated as a git tag, e.g. "v2.24.0"
+#   any other value   → treated as a git tag, e.g. "v3.6.0"
+#
+# The source tree is KEPT at /opt/TopCPToolkit/source (only .git is removed):
+# Athena's CMake installs share/ data files and python/ modules into the build
+# tree as symlinks back into the source tree, so deleting the source would
+# leave the reference configs (the GUI's TCT catalogue and templates) and the
+# TopCPToolkit Python modules dangling.
 ARG TCT_VERSION
 RUN --mount=type=secret,id=cern_token \
     if [ -z "${TCT_VERSION}" ]; then \
@@ -69,16 +75,18 @@ RUN --mount=type=secret,id=cern_token \
         echo "Cloning TopCPToolkit ref: ${CLONE_REF}" ; \
         git clone --depth=1 --branch "${CLONE_REF}" \
             "https://oauth2:${CERN_TOKEN}@gitlab.cern.ch/atlasphys-top/reco/TopCPToolkit.git" \
-            /tmp/TopCPToolkit-src \
+            /opt/TopCPToolkit/source \
         && unset CERN_TOKEN \
+        && rm -rf /opt/TopCPToolkit/source/.git \
         && echo "${TCT_VERSION}" > /opt/tct_version.txt \
         && source /home/atlas/release_setup.sh \
         && mkdir -p /opt/TopCPToolkit/build \
         && cd /opt/TopCPToolkit/build \
-        && cmake /tmp/TopCPToolkit-src/source \
+        && cmake /opt/TopCPToolkit/source/source \
         && make -j$(nproc) \
-        && cp -r /tmp/TopCPToolkit-src/source/ConfigDocumentation /opt/TopCPToolkit/ConfigDocumentation \
-        && rm -rf /tmp/TopCPToolkit-src ; \
+        && cp -r /opt/TopCPToolkit/source/source/ConfigDocumentation /opt/TopCPToolkit/ConfigDocumentation \
+        && ls -d /opt/TopCPToolkit/build/*/data/TopCPToolkit/configs \
+        && echo "Reference configs: $(find /opt/TopCPToolkit/build/*/data/TopCPToolkit/configs -name '*.yaml' | wc -l) files" ; \
     fi
 
 # Copy backend

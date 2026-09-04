@@ -127,6 +127,10 @@ def build_full_schema(include_example_content=False):
         data_dir = catalogue.find_tct_data_dir()
         schema["catalogue"] = catalogue.build_catalogue(data_dir)
         schema["examples"] = catalogue.list_examples(data_dir)
+        schema["tctDataDir"] = data_dir
+        if data_dir:
+            logger.info("TopCPToolkit data dir %s: %d reference configs, %d AddConfigBlocks entries",
+                        data_dir, len(schema["examples"]), len(schema["catalogue"]))
         if include_example_content:
             for ex in schema["examples"]:
                 ex["content"] = catalogue.read_example(data_dir, ex["path"])
@@ -188,6 +192,8 @@ def health():
         "tct_version": v["tct"],
         "pdflatex": v["pdflatex"],
         "schema_source": get_schema()["source"],
+        "tct_data_dir": get_schema().get("tctDataDir"),
+        "catalogue_size": len(get_schema().get("catalogue", [])),
     })
 
 
