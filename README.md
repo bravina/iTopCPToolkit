@@ -268,9 +268,14 @@ Everything comes from `ConfigBlock.addOption(...)` and the factory:
 | `meta={...}` (upstream, in progress) | `choices` → dropdown; `role` ∈ `container` / `containerRef` / `selection` → autocomplete and reference checking; `multiline` → textarea |
 | `schema.keywords` (upstream, in progress) | form-based editor for `EventSelection.selectionCuts`; until then the cuts are a textarea |
 
-When `meta.role` is absent, `optionRole()` in
-`frontend/src/utils/collectionRegistry.js` falls back to naming conventions —
-that function is the only place such heuristics live.
+Container autocomplete and reference checking are active **only** for options
+that declare `meta.role`. There is no name-based fallback: an option the
+upstream block does not annotate is rendered as a plain field and is never
+reported as an unknown container — so working points (`Trigger.electronID:
+Tight`) and input xAOD names (`Jets.jetCollection`) are left alone. The one
+exception is a sub-block `containerName`, which TextConfig propagates from the
+parent instance. `optionRole()` in `frontend/src/utils/collectionRegistry.js`
+is where that decision is made.
 
 ---
 

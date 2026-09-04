@@ -315,7 +315,8 @@ export default function App() {
   )
 
   const previewPanel = (
-    <YamlPreview config={config} schema={schema} onExport={handleExport} />
+    <YamlPreview config={config} schema={schema} onExport={handleExport}
+      selected={selected} onSelectBlock={setSelected} />
   )
 
   return (
@@ -336,7 +337,7 @@ export default function App() {
         />
       )}
 
-      <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col">
+      <div className="app-shell bg-slate-900 text-slate-100 flex flex-col">
         <header className="h-10 bg-slate-800 border-b border-slate-700 flex items-center px-4 gap-2 shrink-0 overflow-x-auto">
           <span className="text-sm font-bold shrink-0">
             <BrandName />
@@ -403,23 +404,27 @@ export default function App() {
         </header>
 
         {!showSplash && mode === null && (
-          <ModeSelector onSelect={setMode} appVersion={versions.app} tctVersion={versions.tct} pdflatex={versions.pdflatex} />
+          <div className="flex-1 min-h-0 overflow-y-auto">
+            <ModeSelector onSelect={setMode} appVersion={versions.app} tctVersion={versions.tct} pdflatex={versions.pdflatex} />
+          </div>
         )}
 
         {mode === 'builder' && (
-          isMobile ? (
-            <MobileLayout sidebar={sidebarPanel} editor={editorPanel} preview={previewPanel} />
-          ) : (
-            <ResizablePanels initialSizes={[20, 50, 30]}>
-              {sidebarPanel}
-              {editorPanel}
-              {previewPanel}
-            </ResizablePanels>
-          )
+          <div className="flex flex-1 min-h-0 overflow-hidden">
+            {isMobile ? (
+              <MobileLayout sidebar={sidebarPanel} editor={editorPanel} preview={previewPanel} />
+            ) : (
+              <ResizablePanels initialSizes={[20, 50, 30]}>
+                {sidebarPanel}
+                {editorPanel}
+                {previewPanel}
+              </ResizablePanels>
+            )}
+          </div>
         )}
 
         {mode === 'reader' && (
-          <div className="flex flex-1 overflow-hidden">
+          <div className="flex flex-1 min-h-0 overflow-hidden">
             <ConfigReader
               schema={schema}
               onOpenInBuilder={handleOpenInBuilder}
@@ -429,7 +434,7 @@ export default function App() {
         )}
 
         {mode === 'intnote' && (
-          <div className="flex flex-1 overflow-hidden">
+          <div className="flex flex-1 min-h-0 overflow-hidden">
             <IntNoteWriter tctVersion={versions.tct} pdflatex={versions.pdflatex} />
           </div>
         )}

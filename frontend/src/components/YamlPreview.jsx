@@ -1,17 +1,42 @@
-import { useState } from 'react'
-import { toYamlString } from '../utils/yamlSerializer.js'
+import { useState, useEffect, useMemo, useRef } from 'react'
+import { toYamlBlocks, toYamlString } from '../utils/yamlSerializer.js'
 
-export default function YamlPreview({ config, schema, onExport }) {
+const EMPTY_PLACEHOLDER = '# No blocks enabled yet\n'
+
+/**
+ * Live YAML preview.  Each top-level block is its own <div> so the block that
+ * is currently selected in the builder can be highlighted and scrolled to,
+ * and so clicking a block in the preview jumps the editor to it.
+ *
+ * The text of each block is its serializer dump minus trailing newlines; the
+ * blank line `toYamlString` puts between blocks is a bottom margin here (a
+ * trailing "\n" inside a `white-space: pre` block would hang and not render).
+ */
+export default function YamlPreview({ config, schema, onExport, selected, onSelectBlock }) {
   const [copied, setCopied] = useState(false)
   const [filename, setFilename] = useState('analysis_config.yaml')
-  const yamlText = toYamlString(config, schema)
+  const scrollRef = useRef(null)
+  const blockRefs = useRef(new Map())
+
+  const blocks = useMemo(() => toYamlBlocks(config, schema) ?? [], [config, schema])
+
+  // A block is selectable only if it is a real builder block: this rules out
+  // the AddConfigBlocks pseudo-block and blocks kept verbatim from an import.
+  const isSelectable = name => !!config?.blocks?.[name]
 
   function handleCopy() {
-    navigator.clipboard.writeText(yamlText).then(() => {
+    navigator.clipboard.writeText(toYamlString(config, schema)).then(() => {
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
     })
   }
+
+  // Follow the selection: scroll the preview's own container, not the page.
+  useEffect(() => {
+    if (!selected) return
+    const el = blockRefs.current.get(selected)
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [selected, blocks.length])
 
   return (
     <div className="h-full bg-slate-900 border-l border-slate-700 flex flex-col">
@@ -42,9 +67,33 @@ export default function YamlPreview({ config, schema, onExport }) {
         </div>
       </div>
 
-      <pre className="yaml-preview flex-1 overflow-auto p-4 text-xs text-slate-300 leading-relaxed whitespace-pre">
-        {yamlText}
-      </pre>
+      <div
+        ref={scrollRef}
+        className="yaml-preview flex-1 min-h-0 overflow-auto p-4 text-xs text-slate-300 leading-relaxed whitespace-pre"
+      >
+        {blocks.length === 0 ? EMPTY_PLACEHOLDER : blocks.map((b, i) => {
+          const selectable = isSelectable(b.name)
+          const active = b.name === selected
+          return (
+            <div
+              key={b.name}
+              ref={el => {
+                if (el) blockRefs.current.set(b.name, el)
+                else blockRefs.current.delete(b.name)
+              }}
+              onClick={selectable && onSelectBlock ? () => onSelectBlock(b.name) : undefined}
+              title={selectable ? `Edit ${b.name}` : undefined}
+              className={`border-l-2 -ml-0.5 transition-colors ${i < blocks.length - 1 ? 'mb-5' : ''} ${
+                active
+                  ? 'bg-blue-500/10 border-blue-400 text-slate-100'
+                  : 'border-transparent'
+              } ${selectable ? 'cursor-pointer hover:bg-slate-800/60' : ''}`}
+            >
+              {b.text.replace(/\n+$/, '')}
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }

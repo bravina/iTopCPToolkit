@@ -2,6 +2,17 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * App shell: a *definite* viewport height (not min-height) so the header +
+ * panel columns form an unbroken definite-height chain and each column
+ * scrolls on its own instead of growing the window.  `dvh` where supported,
+ * so mobile browser chrome cannot push the bottom tab bar out of reach.
+ */
+.app-shell { height: 100vh; overflow: hidden; }
+@supports (height: 100dvh) {
+  .app-shell { height: 100dvh; }
+}
+
 /* Monospace YAML preview */
 .yaml-preview { font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace; }
 

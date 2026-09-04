@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import InfoPopover from './InfoPopover.jsx'
 import CollectionField from './CollectionField.jsx'
 import SelectionCutsEditor from './SelectionCutsEditor.jsx'
@@ -69,14 +69,50 @@ function NumberField({ opt, value, onChange, placeholder }) {
   )
 }
 
-/** Comma-separated for scalar lists; JSON editing when the list holds objects. */
+/** Text shown for a list value. */
+function listText(v) {
+  return Array.isArray(v) ? v.join(', ') : (v ?? '')
+}
+
+/** Comma-separated text → list; blank text means "unset" (''), never []. */
+function parseList(text) {
+  const parts = String(text).split(',').map(s => s.trim()).filter(Boolean)
+  return parts.length ? parts : ''
+}
+
+function listUnset(v) {
+  return v === '' || v === null || v === undefined || (Array.isArray(v) && v.length === 0)
+}
+
+function sameList(a, b) {
+  return (listUnset(a) && listUnset(b)) || JSON.stringify(a) === JSON.stringify(b)
+}
+
+/**
+ * Comma-separated for scalar lists; JSON editing when the list holds objects.
+ *
+ * The text being typed is kept locally so a trailing comma survives the
+ * round-trip through the parsed value; the field only resyncs from the prop
+ * when an outside change (undo, import) makes it differ by value.
+ */
 function ListField({ value, onChange, placeholder }) {
+  // Hooks stay above the early return so the hook order is stable when a value
+  // flips between a scalar list and a list of objects.
+  const [text, setText] = useState(() => listText(value))
+  useEffect(() => {
+    if (!sameList(parseList(text), value)) setText(listText(value))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value])
+
   const isComplex = Array.isArray(value) && value.some(v => v && typeof v === 'object')
   if (isComplex) return <JsonField value={value} onChange={onChange} expect="array" />
-  const display = Array.isArray(value) ? value.join(', ') : (value ?? '')
+
+  function handle(t) {
+    setText(t)
+    onChange(parseList(t))
+  }
   return (
-    <input type="text" value={display}
-      onChange={e => onChange(e.target.value.split(',').map(s => s.trim()).filter(Boolean))}
+    <input type="text" value={text} onChange={e => handle(e.target.value)}
       className={INPUT} placeholder={placeholder || 'comma-separated values'} />
   )
 }

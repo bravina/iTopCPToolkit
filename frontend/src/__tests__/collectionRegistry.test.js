@@ -4,7 +4,59 @@ import {
 } from '../utils/collectionRegistry.js'
 import { checkDepsFromState, checkDepsFromYaml, looksLikeContainerRef } from '../utils/dependencyChecker.js'
 import { yamlToConfigSync } from '../utils/yamlToConfig.js'
-import { SCHEMA, findBlock, opt } from './fixtures/schema.js'
+import { SCHEMA, block, findBlock, opt } from './fixtures/schema.js'
+
+// ── Local schema variants ─────────────────────────────────────────────────────
+// fixtures/schema.js is shared with other suites and is never mutated here; the
+// two variants below are deep copies with `meta.role` added or stripped.
+
+/** A Trigger block whose option names *look* like object references but are not:
+ *  electronID/electronIsol/muonID hold working points, jetCollection an xAOD name. */
+const TRIGGER = block('Trigger', [
+  opt('electronID', 'str', ''),
+  opt('electronIsol', 'str', ''),
+  opt('muonID', 'str', ''),
+  opt('jetCollection', 'str', ''),
+], { category: 'Selection' })
+
+/** Deep-copy a block list, rewriting each option through `fn(opt, blockDef)`. */
+function mapOptions(blocks, fn) {
+  const mapBlock = (b) => ({
+    ...b,
+    options: (b.options || []).map(o => fn({ ...o }, b)),
+    subBlocks: (b.subBlocks || []).map(mapBlock),
+  })
+  return blocks.map(mapBlock)
+}
+
+const stripRole = o => (o.meta && 'role' in o.meta
+  ? { ...o, meta: Object.fromEntries(Object.entries(o.meta).filter(([k]) => k !== 'role')) }
+  : o)
+
+const withRole = (o, role) => ({ ...o, meta: { ...(o.meta || {}), role } })
+
+/** No option anywhere declares a role — the state the GUI is in until upstream
+ *  annotates the blocks. */
+const NO_ROLES = [...mapOptions(SCHEMA.blocks, stripRole), TRIGGER]
+
+/** Roles declared the way upstream is expected to declare them. */
+const ROLED = [...mapOptions(SCHEMA.blocks, (o, b) => {
+  const isSub = (b.parents || []).length > 0
+  const names = new Set((b.options || []).map(x => x.name))
+  if (o.name === 'selectionName') return withRole(o, 'selection')
+  if (o.name === 'outputName') return withRole(o, 'container')
+  // Sub-block containerName is propagated from the parent, not declared.  A root
+  // block that also names an output or a selection (Thinning, PtEtaSelection)
+  // reads an existing container rather than defining one.
+  if (!isSub && o.name === 'containerName') {
+    return withRole(o, names.has('outputName') || names.has('selectionName') ? 'containerRef' : 'container')
+  }
+  if (b.name === 'OverlapRemoval' && ['electrons', 'muons', 'jets'].includes(o.name)) return withRole(o, 'containerRef')
+  if (b.name === 'EventSelection' && o.name === 'electrons') return withRole(o, 'containerRef')
+  return o
+}), TRIGGER]
+
+const schemaWith = blocks => ({ ...SCHEMA, blocks })
 
 const YAML = {
   Jets: [{ containerName: 'AnaJets', JVT: {}, PtEtaSelection: [{ selectionName: 'tight', minPt: 30000 }] }],
@@ -30,27 +82,45 @@ describe('inferFieldType', () => {
 })
 
 describe('optionRole', () => {
-  it('prefers upstream meta.role', () => {
+  it('comes from upstream meta.role', () => {
     expect(optionRole(opt('anything', 'str', '', { meta: { role: 'selection' } }))).toBe('selection')
+    expect(optionRole(opt('whatever', 'str', '', { meta: { role: 'container' } }))).toBe('container')
+    expect(optionRole(opt('nameless', 'str', '', { meta: { role: 'containerRef' } }))).toBe('containerRef')
+    // An empty or non-string role is not a role.
+    expect(optionRole(opt('x', 'str', '', { meta: { role: '' } }))).toBeNull()
+    expect(optionRole(opt('x', 'str', '', { meta: { choices: ['a'] } }))).toBeNull()
   })
-  it('falls back to naming conventions', () => {
+
+  it('keeps containerName propagation in sub-blocks', () => {
     const jets = findBlock(SCHEMA.blocks, 'Jets')
-    const thinning = findBlock(SCHEMA.blocks, 'Thinning')
-    const byName = b => Object.fromEntries(b.options.map(o => [o.name, o]))
-    expect(optionRole(byName(jets).containerName, { blockDef: jets })).toBe('container')
-    expect(optionRole(byName(thinning).containerName, { blockDef: thinning })).toBe('containerRef')
-    expect(optionRole(byName(thinning).outputName, { blockDef: thinning })).toBe('container')
-    expect(optionRole(byName(jets).containerName, { isSub: true })).toBe('inherited')
-    expect(optionRole(opt('electrons', 'str', ''))).toBe('containerRef')
-    expect(optionRole(opt('selectionName', 'str', ''))).toBe('selection')
-    expect(optionRole(opt('minPt', 'float', 0))).toBeNull()
-    expect(getAutocompleteMode(opt('jets', 'str', ''))).toBe('collections+selections')
+    const containerName = jets.options.find(o => o.name === 'containerName')
+    expect(optionRole(containerName, { isSub: true })).toBe('inherited')
+    expect(optionRole(containerName, { isSub: false })).toBeNull()
+    expect(optionRole(containerName)).toBeNull()
+  })
+
+  it('never infers a role from the option name', () => {
+    // Regression: Trigger working points and input xAOD names are not references.
+    for (const name of ['electronID', 'electronIsol', 'muonID', 'jetCollection']) {
+      expect(optionRole(opt(name, 'str', ''))).toBeNull()
+    }
+    for (const name of ['electrons', 'muons', 'jets', 'outputName', 'selectionName',
+                        'containerName', 'inputParticles', 'minPt']) {
+      expect(optionRole(opt(name, 'str', ''))).toBeNull()
+    }
+  })
+
+  it('drives autocomplete only for declared containerRefs', () => {
+    expect(getAutocompleteMode(opt('anything', 'str', '', { meta: { role: 'containerRef' } })))
+      .toBe('collections+selections')
+    expect(getAutocompleteMode(opt('jets', 'str', ''))).toBeNull()
+    expect(getAutocompleteMode(opt('electronID', 'str', ''))).toBeNull()
     expect(getAutocompleteMode(opt('minPt', 'float', 0))).toBeNull()
   })
 })
 
-describe('registry', () => {
-  const fromYaml = buildRegistryFromYaml(YAML, SCHEMA.blocks)
+describe('registry with declared roles', () => {
+  const fromYaml = buildRegistryFromYaml(YAML, ROLED)
 
   it('collects containers with their types, including outputName aliases', () => {
     expect(fromYaml.collections.map(c => c.name)).toEqual(['AnaJets', 'AnaElectrons', 'OutJets'])
@@ -65,22 +135,43 @@ describe('registry', () => {
   })
 
   it('is identical whether built from YAML or from the builder state', () => {
-    const fromState = buildRegistryFromState(yamlToConfigSync(YAML, SCHEMA), SCHEMA.blocks)
+    const fromState = buildRegistryFromState(yamlToConfigSync(YAML, schemaWith(ROLED)), ROLED)
     expect(fromState).toEqual(fromYaml)
   })
 
   it('ignores disabled blocks in the builder state', () => {
-    const config = yamlToConfigSync(YAML, SCHEMA)
+    const config = yamlToConfigSync(YAML, schemaWith(ROLED))
     config.blocks.Electrons.enabled = false
-    const reg = buildRegistryFromState(config, SCHEMA.blocks)
+    const reg = buildRegistryFromState(config, ROLED)
     expect(reg.collections.map(c => c.name)).toEqual(['AnaJets', 'OutJets'])
+  })
+})
+
+describe('registry without declared roles', () => {
+  it('is empty when no option anywhere declares a role', () => {
+    const fromYaml = buildRegistryFromYaml(YAML, NO_ROLES)
+    expect(fromYaml.collections).toEqual([])
+    expect(fromYaml.selections).toEqual([])
+    expect(fromYaml.withSelections).toEqual([])
+    expect(fromYaml.byType).toEqual({})
+
+    const fromState = buildRegistryFromState(yamlToConfigSync(YAML, schemaWith(NO_ROLES)), NO_ROLES)
+    expect(fromState).toEqual(fromYaml)
+  })
+
+  it('picks up exactly the roles the plain fixture happens to declare', () => {
+    // fixtures/schema.js annotates only JVT.selectionName (selection) and
+    // EventSelection.electrons (containerRef), so nothing defines a container.
+    const reg = buildRegistryFromYaml(YAML, SCHEMA.blocks)
+    expect(reg.collections).toEqual([])
+    expect(reg.withSelections).toEqual(['AnaJets.jvt'])
   })
 })
 
 describe('dependency checker', () => {
   it('flags unknown containers and selections, only on containerRef options', () => {
-    const registry = buildRegistryFromYaml(YAML, SCHEMA.blocks)
-    const issues = checkDepsFromYaml(YAML, registry, SCHEMA.blocks)
+    const registry = buildRegistryFromYaml(YAML, ROLED)
+    const issues = checkDepsFromYaml(YAML, registry, ROLED)
     expect(issues.map(i => `${i.path}:${i.message}`)).toEqual([
       "OverlapRemoval[0].muons:Container 'AnaMuons' is not defined by any enabled block",
       "EventSelection[0].electrons:Selection 'medium' is not defined for container 'AnaElectrons'",
@@ -89,9 +180,40 @@ describe('dependency checker', () => {
   })
 
   it('gives the same answer from the builder state', () => {
-    const config = yamlToConfigSync(YAML, SCHEMA)
-    const registry = buildRegistryFromState(config, SCHEMA.blocks)
-    expect(checkDepsFromState(config, registry, SCHEMA.blocks)).toHaveLength(2)
+    const config = yamlToConfigSync(YAML, schemaWith(ROLED))
+    const registry = buildRegistryFromState(config, ROLED)
+    expect(checkDepsFromState(config, registry, ROLED)).toHaveLength(2)
+  })
+
+  it('warns exactly once for a single unknown container', () => {
+    const yaml = { Jets: [{ containerName: 'AnaJets' }], OverlapRemoval: { jets: 'AnaJets', muons: 'AnaMuons' } }
+    const registry = buildRegistryFromYaml(yaml, ROLED)
+    const issues = checkDepsFromYaml(yaml, registry, ROLED)
+    expect(issues).toHaveLength(1)
+    expect(issues[0].path).toBe('OverlapRemoval[0].muons')
+    expect(issues[0].message).toMatch(/AnaMuons/)
+  })
+
+  it('never flags working points or input collection names', () => {
+    // Regression: electronID: Tight used to be read as a reference to a
+    // container named 'Tight' via the old inferFieldType fallback.
+    const yaml = {
+      Trigger: { electronID: 'Tight', electronIsol: 'Loose', muonID: 'Medium' },
+      Jets: [{ containerName: 'AnaJets', jetCollection: 'AntiKt4EMPFlowJets' }],
+    }
+    for (const blocks of [ROLED, NO_ROLES]) {
+      const registry = buildRegistryFromYaml(yaml, blocks)
+      expect(checkDepsFromYaml(yaml, registry, blocks)).toEqual([])
+      const config = yamlToConfigSync(yaml, schemaWith(blocks))
+      expect(checkDepsFromState(config, buildRegistryFromState(config, blocks), blocks)).toEqual([])
+    }
+  })
+
+  it('reports nothing at all when no option declares a role', () => {
+    const registry = buildRegistryFromYaml(YAML, NO_ROLES)
+    expect(checkDepsFromYaml(YAML, registry, NO_ROLES)).toEqual([])
+    const config = yamlToConfigSync(YAML, schemaWith(NO_ROLES))
+    expect(checkDepsFromState(config, buildRegistryFromState(config, NO_ROLES), NO_ROLES)).toEqual([])
   })
 
   it('looksLikeContainerRef is conservative', () => {

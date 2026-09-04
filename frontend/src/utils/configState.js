@@ -17,7 +17,8 @@
  *   }
  *
  * Every block may have several instances (Athena accepts a list for any
- * block); the YAML serializer always writes a list.
+ * block); the YAML serializer writes a list, except that a single fully
+ * default instance is written as `Block: {}`.
  */
 
 import { v4 as uuid } from 'uuid'

@@ -4,7 +4,8 @@
  * Builder state → plain JS object → YAML string.
  *
  * Rules (mirroring what TextConfig accepts):
- *   - every block is written as a YAML list, even with one instance
+ *   - every block is written as a YAML list, except a block whose single
+ *     instance has nothing set: that one is written as a mapping (`Block: {}`)
  *   - options equal to their (factory-merged) default are omitted
  *   - `AddConfigBlocks` is written first, and only for custom blocks that are
  *     actually used in the config
@@ -15,15 +16,32 @@
 import yaml from 'js-yaml'
 import { ADD_CONFIG_BLOCKS, ADD_CONFIG_BLOCKS_KEYS, blocksForConfig, superBlockList } from './schema.js'
 
+/** An empty array or an empty plain object — i.e. a container with nothing in it. */
+function isEmptyContainer(v) {
+  if (Array.isArray(v)) return v.length === 0
+  return !!v && typeof v === 'object' && Object.keys(v).length === 0
+}
+
 /**
- * Loose default comparison.  '' / null / undefined count as "unset".
- * Arrays and objects are compared by value.
+ * Loose default comparison.  '' / null / undefined count as "unset", and so
+ * does an empty list/dict when the default is unset or itself empty.
+ * Non-empty arrays and objects are compared by value.
  */
 export function isDefault(value, defaultVal) {
   if (value === '' || value === null || value === undefined) return true
+  if (isEmptyContainer(value) &&
+      (defaultVal === null || defaultVal === undefined || isEmptyContainer(defaultVal))) return true
   if (defaultVal === null || defaultVal === undefined) return false
   if (typeof defaultVal === 'object') return JSON.stringify(value) === JSON.stringify(defaultVal)
   return value === defaultVal || String(value) === String(defaultVal)
+}
+
+/**
+ * A block (or sub-block) with exactly one instance that has nothing set is
+ * written as a mapping; everything else stays a list.
+ */
+function asBlockValue(instances) {
+  return (instances.length === 1 && Object.keys(instances[0]).length === 0) ? {} : instances
 }
 
 /** Serialise one block or sub-block instance to a plain object (possibly {}). */
@@ -38,7 +56,7 @@ export function serializeInstance(inst, blockDef) {
   for (const subDef of (blockDef?.subBlocks || [])) {
     const subState = inst?.subBlocks?.[subDef.name]
     if (!subState?.enabled) continue
-    out[subDef.name] = subState.instances.map(si => serializeInstance(si, subDef))
+    out[subDef.name] = asBlockValue((subState.instances || []).map(si => serializeInstance(si, subDef)))
   }
   return out
 }
@@ -84,7 +102,7 @@ export function buildYamlObject(config, schema) {
   for (const def of blocks) {
     const st = config.blocks[def.name]
     if (!st?.enabled) continue
-    result[def.name] = st.instances.map(inst => serializeInstance(inst, def))
+    result[def.name] = asBlockValue(st.instances.map(inst => serializeInstance(inst, def)))
   }
   for (const [name, raw] of Object.entries(config.unknown || {})) {
     if (!(name in result)) result[name] = raw
@@ -92,15 +110,26 @@ export function buildYamlObject(config, schema) {
   return result
 }
 
+/** Dump a single top-level block to YAML. */
+function dumpBlock(key, value) {
+  return yaml.dump({ [key]: value }, { lineWidth: 120, sortKeys: false, quotingType: "'", noRefs: true })
+}
+
 /** Dump each top-level block separately, joined by blank lines. */
 export function objectToYaml(obj) {
   const keys = Object.keys(obj)
   if (!keys.length) return '# No blocks enabled yet\n'
-  return keys.map(key =>
-    yaml.dump({ [key]: obj[key] }, { lineWidth: 120, sortKeys: false, quotingType: "'", noRefs: true })
-  ).join('\n')
+  return keys.map(key => dumpBlock(key, obj[key])).join('\n')
+}
+
+/** One `{ name, text }` entry per top-level block, in order. */
+export function toYamlBlocks(config, schema) {
+  const obj = buildYamlObject(config, schema)
+  return Object.keys(obj).map(name => ({ name, text: dumpBlock(name, obj[name]) }))
 }
 
 export function toYamlString(config, schema) {
-  return objectToYaml(buildYamlObject(config, schema))
+  const blocks = toYamlBlocks(config, schema)
+  if (!blocks.length) return '# No blocks enabled yet\n'
+  return blocks.map(b => b.text).join('\n')
 }

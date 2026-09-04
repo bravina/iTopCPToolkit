@@ -5,8 +5,10 @@
  * whose target is not defined anywhere in the config.  Issues have the same
  * shape as validator issues, with kind: 'dependency'.
  *
- * Deliberately conservative: only values that look like `Container` or
- * `Container.selection` are checked, so free-form strings are never flagged.
+ * Deliberately conservative on two counts: the 'containerRef' role comes only
+ * from the upstream `meta.role` (never from the option's name), so options the
+ * block does not annotate are never checked; and of those that are, only values
+ * that look like `Container` or `Container.selection` are flagged.
  */
 
 import { walkState, walkYaml } from './configWalk.js'
@@ -41,13 +43,13 @@ function checkWalked(walked, registry) {
   for (const { def, instances } of walked) {
     for (const { idx, options, subs } of instances) {
       for (const opt of def.options || []) {
-        if (optionRole(opt, { blockDef: def }) !== 'containerRef') continue
+        if (optionRole(opt) !== 'containerRef') continue
         const issue = checkValue(options[opt.name], `${def.name}[${idx}].${opt.name}`, registry)
         if (issue) issues.push(issue)
       }
       for (const { def: sd, idx: sidx, options: so } of subs) {
         for (const opt of sd.options || []) {
-          if (optionRole(opt, { isSub: true, blockDef: sd }) !== 'containerRef') continue
+          if (optionRole(opt, { isSub: true }) !== 'containerRef') continue
           const issue = checkValue(so[opt.name], `${def.name}[${idx}].${sd.name}[${sidx}].${opt.name}`, registry)
           if (issue) issues.push(issue)
         }

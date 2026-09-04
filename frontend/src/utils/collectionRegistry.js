@@ -4,10 +4,12 @@
  * Registry of physics-object containers and named selections defined by a
  * config, consumed by CollectionField (autocomplete) and dependencyChecker.
  *
- * What an option *means* comes from the upstream `meta.role` on the option
- * (container | containerRef | selection) when the block declares it.  Until
- * every block does, `optionRole` falls back to naming conventions — the
- * fallback is deliberately the only place such heuristics live.
+ * What an option *means* comes only from the upstream `meta.role` on the option
+ * (container | containerRef | selection).  There is deliberately no name-based
+ * fallback: option names are not a reliable signal (`Trigger.electronID` holds
+ * a working point, `Jets.jetCollection` an input xAOD name), so an option the
+ * upstream block does not annotate simply has no role, and neither autocomplete
+ * nor reference checking applies to it.
  *
  * Registry shape:
  *   {
@@ -20,7 +22,7 @@
 
 import { walkState, walkYaml } from './configWalk.js'
 
-// ── Object-type inference (fallback only, used to filter suggestions) ─────────
+// ── Object-type inference (types registry containers, filters suggestions) ────
 
 const TYPE_PATTERNS = [
   ['taus',      /^tau|taus?\b|ditau/],
@@ -42,25 +44,20 @@ export function inferFieldType(name) {
 // ── Option roles ──────────────────────────────────────────────────────────────
 
 /**
- * Role of an option: 'container' (defines a container name), 'containerRef'
- * (reads `container[.selection]`), 'selection' (defines a selection name),
- * 'inherited' (containerName in a sub-block, propagated from the parent) or null.
+ * Role of an option, taken only from the upstream `meta.role`: 'container'
+ * (defines a container name), 'containerRef' (reads `container[.selection]`),
+ * 'selection' (defines a selection name), or null.
+ *
+ * The single exception is 'inherited': a sub-block `containerName`, which
+ * TextConfig propagates from the parent instance rather than declaring anew.
+ *
+ * There is deliberately no name-based fallback — an option the upstream block
+ * does not annotate gets no role, and is treated as an ordinary value.
  */
-export function optionRole(opt, { isSub = false, blockDef = null } = {}) {
+export function optionRole(opt, { isSub = false } = {}) {
   const declared = opt?.meta?.role
-  if (declared) return declared
-  const name = opt?.name || ''
-  if (name === 'containerName') {
-    if (isSub) return 'inherited'
-    const names = new Set((blockDef?.options || []).map(o => o.name))
-    // A root block that also names an output or a selection reads its container
-    return (names.has('outputName') || names.has('selectionName')) ? 'containerRef' : 'container'
-  }
-  if (name === 'outputName') return 'container'
-  if (name === 'selectionName') return 'selection'
-  if (name === 'selection' || name === 'preselection') return null
-  const n = name.toLowerCase()
-  if (inferFieldType(n) || /container|particles/.test(n)) return 'containerRef'
+  if (typeof declared === 'string' && declared) return declared
+  if (isSub && opt?.name === 'containerName') return 'inherited'
   return null
 }
 
@@ -92,7 +89,7 @@ function buildRegistry(walked) {
 
   for (const { def, instances } of walked) {
     const objType = inferFieldType(def.name)
-    const roles = (def.options || []).map(o => [o, optionRole(o, { blockDef: def })])
+    const roles = (def.options || []).map(o => [o, optionRole(o)])
     const containerOpt = (def.options || []).find(o => o.name === 'containerName')
 
     for (const { options, subs } of instances) {
@@ -106,7 +103,7 @@ function buildRegistry(walked) {
       for (const { def: sd, options: so } of subs) {
         const subContainer = (so.containerName && String(so.containerName)) || container
         for (const o of sd.options || []) {
-          const role = optionRole(o, { isSub: true, blockDef: sd })
+          const role = optionRole(o, { isSub: true })
           if (role === 'selection' && subContainer) addSelection(valueOrDefault(so, o), subContainer, objType)
           else if (role === 'container') addCollection(valueOrDefault(so, o), objType, sd.name)
         }
