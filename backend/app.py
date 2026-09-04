@@ -12,9 +12,8 @@ POST /api/generate-intnote    Runs generateConfigInformation.py on a JSON file,
                               compiles the resulting .tex to PDF, returns both
 
 The schema is built once at startup by walking the live ConfigFactory
-(see introspect.py).  Without Athena, the committed snapshot
-``frontend/src/schema.snapshot.json`` is served instead so the frontend can be
-developed and tested outside the Docker image.
+(see introspect.py).  Athena is required: the app only runs inside the
+AnalysisBase image.
 """
 
 import base64
@@ -25,6 +24,7 @@ import logging
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 
 from flask import Flask, Response, jsonify, request, send_from_directory
@@ -40,8 +40,6 @@ REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 APP_VERSION = open(os.path.join(REPO_ROOT, "VERSION")).read().strip()
 
 STATIC_DIR = os.path.join(REPO_ROOT, "frontend", "dist")
-SNAPSHOT_PATH = os.environ.get(
-    "SCHEMA_SNAPSHOT", os.path.join(REPO_ROOT, "frontend", "src", "schema.snapshot.json"))
 
 # Path to the ConfigDocumentation script kept from the TCT source tree
 _INTNOTE_SCRIPT = "/opt/TopCPToolkit/ConfigDocumentation/generateConfigInformation.py"
@@ -93,61 +91,28 @@ def _versions():
 # Schema construction + cache
 # ─────────────────────────────────────────────────────────────────────────────
 
-EMPTY_SCHEMA = {
-    "categories": list(introspect.CATEGORY_ORDER),
-    "blocks": [], "catalogue": [], "examples": [], "keywords": None,
-}
+NO_ATHENA_MESSAGE = ("Athena (AnalysisAlgorithmsConfig) is not importable — "
+                     "iTopCPToolkit must run inside the AnalysisBase image")
 
 
-def _load_snapshot():
-    try:
-        with open(SNAPSHOT_PATH, encoding="utf-8") as fh:
-            data = json.load(fh)
-        if isinstance(data, dict) and isinstance(data.get("blocks"), list):
-            return data
-        logger.warning("Snapshot %s has an unexpected shape — ignored", SNAPSHOT_PATH)
-    except FileNotFoundError:
-        pass
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Cannot read snapshot %s: %s", SNAPSHOT_PATH, exc)
-    return None
-
-
-def build_full_schema(include_example_content=False):
+def build_full_schema():
     """
     Assemble everything the frontend needs in one document.
 
-    ``source`` tells the frontend where the data came from:
-      athena   – live introspection inside the image
-      snapshot – committed schema.snapshot.json (dev mode)
-      none     – neither available; empty schema
+    Requires a live Athena environment; raises RuntimeError otherwise.
     """
-    if introspect.athena_available():
-        schema = introspect.build_schema()
-        data_dir = catalogue.find_tct_data_dir()
-        schema["catalogue"] = catalogue.build_catalogue(data_dir)
-        schema["examples"] = catalogue.list_examples(data_dir)
-        schema["tctDataDir"] = data_dir
-        if data_dir:
-            logger.info("TopCPToolkit data dir %s: %d reference configs, %d AddConfigBlocks entries",
-                        data_dir, len(schema["examples"]), len(schema["catalogue"]))
-        if include_example_content:
-            for ex in schema["examples"]:
-                ex["content"] = catalogue.read_example(data_dir, ex["path"])
-        # Filled in once EventSelectionConfig exposes its keyword spec upstream
-        schema["keywords"] = None
-        schema["source"] = "athena"
-        schema["snapshotVersions"] = None
-    else:
-        snapshot = _load_snapshot()
-        if snapshot is not None:
-            schema = dict(snapshot)
-            schema["source"] = "snapshot"
-            schema["snapshotVersions"] = snapshot.get("versions")
-        else:
-            schema = json.loads(json.dumps(EMPTY_SCHEMA))
-            schema["source"] = "none"
-            schema["snapshotVersions"] = None
+    if not introspect.athena_available():
+        raise RuntimeError(NO_ATHENA_MESSAGE)
+    schema = introspect.build_schema()
+    data_dir = catalogue.find_tct_data_dir()
+    schema["catalogue"] = catalogue.build_catalogue(data_dir)
+    schema["examples"] = catalogue.list_examples(data_dir)
+    schema["tctDataDir"] = data_dir
+    if data_dir:
+        logger.info("TopCPToolkit data dir %s: %d reference configs, %d AddConfigBlocks entries",
+                    data_dir, len(schema["examples"]), len(schema["catalogue"]))
+    # Filled in once EventSelectionConfig exposes its keyword spec upstream
+    schema["keywords"] = None
     schema["versions"] = _versions()
     return schema
 
@@ -163,17 +128,19 @@ def reset_schema_cache():
 
 
 def get_schema():
+    """Return the cached schema, building it on first use.  Failures are not cached."""
     global _schema_cache, _schema_json, _schema_etag
     if _schema_cache is None:
         logger.info("Building schema…")
-        _schema_cache = build_full_schema()
-        _schema_json = json.dumps(_schema_cache, ensure_ascii=False)
-        _schema_etag = '"' + hashlib.sha1(_schema_json.encode("utf-8")).hexdigest() + '"'
-        n_err = sum(1 for b in _schema_cache["blocks"] if b.get("error"))
-        n_err += sum(1 for e in _schema_cache["catalogue"] if e.get("block", {}).get("error"))
-        logger.info("Schema ready (%s) – %d blocks, %d catalogue entries, %d with errors",
-                    _schema_cache["source"], len(_schema_cache["blocks"]),
-                    len(_schema_cache["catalogue"]), n_err)
+        schema = build_full_schema()          # raises RuntimeError without Athena
+        schema_json = json.dumps(schema, ensure_ascii=False)
+        _schema_cache = schema
+        _schema_json = schema_json
+        _schema_etag = '"' + hashlib.sha1(schema_json.encode("utf-8")).hexdigest() + '"'
+        n_err = sum(1 for b in schema["blocks"] if b.get("error"))
+        n_err += sum(1 for e in schema["catalogue"] if e.get("block", {}).get("error"))
+        logger.info("Schema ready – %d blocks, %d catalogue entries, %d with errors",
+                    len(schema["blocks"]), len(schema["catalogue"]), n_err)
     return _schema_cache
 
 
@@ -184,6 +151,11 @@ def get_schema():
 @app.route("/api/health")
 def health():
     v = _versions()
+    try:
+        sch = get_schema()
+    except Exception as exc:  # noqa: BLE001 — health must never fail
+        logger.warning("Health: schema unavailable: %s", exc)
+        sch = {}
     return jsonify({
         "status": "ok",
         "athena": v["athena"],
@@ -191,15 +163,17 @@ def health():
         "ab_version": v["ab"],
         "tct_version": v["tct"],
         "pdflatex": v["pdflatex"],
-        "schema_source": get_schema()["source"],
-        "tct_data_dir": get_schema().get("tctDataDir"),
-        "catalogue_size": len(get_schema().get("catalogue", [])),
+        "tct_data_dir": sch.get("tctDataDir"),
+        "catalogue_size": len(sch.get("catalogue", [])),
     })
 
 
 @app.route("/api/schema")
 def schema():
-    get_schema()
+    try:
+        get_schema()
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 503
     if request.headers.get("If-None-Match") == _schema_etag:
         return Response(status=304, headers={"ETag": _schema_etag})
     return Response(_schema_json, mimetype="application/json",
@@ -236,15 +210,7 @@ def examples():
 
 @app.route("/api/examples/<path:rel_path>")
 def example_content(rel_path):
-    sch = get_schema()
-    content = None
-    if sch["source"] == "athena":
-        content = catalogue.read_example(catalogue.find_tct_data_dir(), rel_path)
-    else:
-        for ex in sch["examples"]:
-            if ex["path"] == rel_path:
-                content = ex.get("content")
-                break
+    content = catalogue.read_example(catalogue.find_tct_data_dir(), rel_path)
     if content is None:
         return jsonify({"error": f"Unknown example '{rel_path}'"}), 404
     return Response(content, mimetype="application/x-yaml")
@@ -356,6 +322,11 @@ def serve_frontend(path):
 
 
 if __name__ == "__main__":
-    get_schema()  # build eagerly so the first request is fast and errors show in the log
+    try:
+        # Build eagerly: the first request is fast, and a missing Athena is fatal here.
+        get_schema()
+    except RuntimeError as exc:
+        logger.error("%s", exc)
+        sys.exit(1)
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)

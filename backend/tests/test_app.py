@@ -34,9 +34,10 @@ class TestHealth:
         data = client.get("/api/health").get_json()
         assert data["status"] == "ok"
         assert set(data) >= {"athena", "app_version", "ab_version", "tct_version",
-                             "pdflatex", "schema_source"}
+                             "pdflatex", "tct_data_dir", "catalogue_size"}
         assert data["app_version"]
-        assert data["schema_source"] == "athena"
+        assert data["athena"] is True
+        assert "schema_source" not in data
 
 
 class TestSchema:
@@ -46,8 +47,9 @@ class TestSchema:
         assert r.status_code == 200
         data = r.get_json()
         assert set(data) >= {"categories", "blocks", "catalogue", "examples", "keywords",
-                             "versions", "source", "snapshotVersions"}
-        assert data["source"] == "athena"
+                             "versions"}
+        assert data["versions"]["athena"] is True
+        assert "source" not in data and "snapshotVersions" not in data
         assert data["blocks"] and isinstance(data["blocks"], list)
         for b in data["blocks"]:
             assert set(b) >= {"name", "factoryName", "kind", "category", "label", "classes",
@@ -125,40 +127,35 @@ class TestExamples:
         assert client.get("/api/examples/../notes.txt").status_code == 404
 
 
-class TestSnapshotFallback:
+class TestWithoutAthena:
+    """Outside the AnalysisBase image the schema cannot be built at all."""
 
-    def test_snapshot_served_without_athena(self, flask_app, tmp_path, monkeypatch):
-        snapshot = {
-            "categories": ["Core"], "keywords": None, "catalogue": [],
-            "versions": {"ab": "25.2.999", "tct": "v9.9.9"},
-            "blocks": [{"name": "Snap", "factoryName": "Snap", "kind": "class", "category": "Core",
-                        "label": "Snap", "classes": [], "options": [], "dependencies": [],
-                        "subBlocks": [], "parents": [], "error": None}],
-            "examples": [{"path": "x.yaml", "name": "x", "content": "Snap: {}\n"}],
-        }
-        path = tmp_path / "snap.json"
-        path.write_text(json.dumps(snapshot))
+    @pytest.fixture
+    def no_athena(self, flask_app, monkeypatch):
         monkeypatch.setattr(introspect, "athena_available", lambda: False)
-        monkeypatch.setattr(flask_app, "SNAPSHOT_PATH", str(path))
         flask_app.reset_schema_cache()
         with flask_app.app.test_client() as c:
-            data = c.get("/api/schema").get_json()
-            assert data["source"] == "snapshot"
-            assert data["snapshotVersions"]["ab"] == "25.2.999"
-            assert data["versions"]["athena"] is False
-            assert [b["name"] for b in data["blocks"]] == ["Snap"]
-            assert c.get("/api/health").get_json()["schema_source"] == "snapshot"
-            r = c.get("/api/examples/x.yaml")
-            assert r.status_code == 200 and r.get_data(as_text=True) == "Snap: {}\n"
+            yield c
 
-    def test_empty_schema_without_snapshot(self, flask_app, tmp_path, monkeypatch):
-        monkeypatch.setattr(introspect, "athena_available", lambda: False)
-        monkeypatch.setattr(flask_app, "SNAPSHOT_PATH", str(tmp_path / "absent.json"))
-        flask_app.reset_schema_cache()
-        with flask_app.app.test_client() as c:
-            data = c.get("/api/schema").get_json()
-            assert data["source"] == "none"
-            assert data["blocks"] == [] and data["catalogue"] == []
+    def test_schema_returns_503(self, no_athena):
+        r = no_athena.get("/api/schema")
+        assert r.status_code == 503
+        assert "error" in r.get_json()
+        assert r.get_json()["error"]
+
+    def test_health_still_ok(self, no_athena):
+        r = no_athena.get("/api/health")
+        assert r.status_code == 200
+        data = r.get_json()
+        assert data["status"] == "ok"
+        assert data["athena"] is False
+        assert data["tct_data_dir"] is None
+        assert data["catalogue_size"] == 0
+
+    def test_failure_is_not_cached(self, flask_app, no_athena, monkeypatch):
+        assert no_athena.get("/api/schema").status_code == 503
+        monkeypatch.setattr(introspect, "athena_available", lambda: True)
+        assert no_athena.get("/api/schema").status_code == 200
 
 
 def test_export_yaml_removed(client):

@@ -9,7 +9,7 @@ defaults is hardcoded here; the only GUI-side knowledge is a small
 ``CATEGORIES`` map used to group blocks in the sidebar.
 
 Requires a live AnalysisBase environment.  Without it, ``athena_available()``
-is False and ``app.py`` falls back to the committed schema snapshot.
+is False and ``app.py`` refuses to build a schema.
 
 Facts about the factory this module relies on (athena/main, Sep 2026):
 

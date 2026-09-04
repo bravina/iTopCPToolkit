@@ -6,7 +6,11 @@ export const API_BASE = import.meta.env.VITE_API_URL || ''
 
 async function asJson(resp) {
   const data = await resp.json().catch(() => ({}))
-  if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`)
+  if (!resp.ok) {
+    const err = new Error(data.error || `HTTP ${resp.status}`)
+    err.status = resp.status          // set only for HTTP errors, not network failures
+    throw err
+  }
   return data
 }
 

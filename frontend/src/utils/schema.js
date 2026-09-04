@@ -3,7 +3,7 @@
  *
  * Helpers around the schema document served by GET /api/schema:
  *
- *   { blocks, catalogue, examples, keywords, categories, versions, source }
+ *   { blocks, catalogue, examples, keywords, categories, versions }
  *
  * The *effective* schema seen by the editor is the base `blocks` plus any
  * custom blocks the user has declared through AddConfigBlocks — exactly how

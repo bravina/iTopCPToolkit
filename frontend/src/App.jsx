@@ -94,7 +94,12 @@ export default function App() {
         setLoading(false)
       })
       .catch(err => {
-        setError(`Cannot reach backend: ${err.message}`)
+        // err.status is set by api.js for HTTP errors: the message is the
+        // backend's own (e.g. Athena missing).  Without it, the fetch failed.
+        setError(err.status
+          ? { title: 'Backend not ready', detail: err.message }
+          : { title: `Cannot reach backend: ${err.message}`,
+              detail: 'Make sure the Flask backend is running on port 5000.' })
         setLoading(false)
       })
   }, [])  // eslint-disable-line react-hooks/exhaustive-deps
@@ -252,10 +257,10 @@ export default function App() {
   )
 
   if (error) return (
-    <div className="min-h-screen bg-slate-900 flex items-center justify-center">
-      <div className="text-center">
-        <p className="text-red-400 font-semibold mb-2">{error}</p>
-        <p className="text-slate-500 text-sm">Make sure the Flask backend is running on port 5000.</p>
+    <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6">
+      <div className="text-center max-w-xl">
+        <p className="text-red-400 font-semibold mb-2">{error.title}</p>
+        {error.detail && <p className="text-slate-500 text-sm">{error.detail}</p>}
       </div>
     </div>
   )
@@ -344,19 +349,11 @@ export default function App() {
             {versions.app && <span className="text-slate-500 font-normal"> v{versions.app}</span>}
           </span>
 
-          {schema.source === 'athena' && versions.ab && (
+          {versions.athena === true && versions.ab && (
             <Badge tone="green" full={`✓ AnalysisBase ${versions.ab}`} short={`✓ AB ${versions.ab}`} />
           )}
-          {schema.source === 'athena' && !versions.ab && (
+          {versions.athena === true && !versions.ab && (
             <Badge tone="green" full="✓ Athena environment loaded" short="✓ Athena" />
-          )}
-          {schema.source === 'snapshot' && (
-            <Badge tone="yellow"
-              full={`⚠ Schema snapshot${schema.snapshotVersions?.ab ? ` (AB ${schema.snapshotVersions.ab}${schema.snapshotVersions.tct ? `, TCT ${schema.snapshotVersions.tct}` : ''})` : ''} — no live Athena`}
-              short="⚠ Snapshot" />
-          )}
-          {schema.source === 'none' && (
-            <Badge tone="yellow" full="⚠ Athena not available — no schema" short="⚠ No schema" />
           )}
           {versions.tct
             ? <Badge tone="green" full={`✓ TopCPToolkit ${versions.tct}`} short={`✓ TCT ${versions.tct}`} />
@@ -446,7 +443,6 @@ export default function App() {
 /** Why the TopCPToolkit catalogue is empty, as precisely as the backend can tell. */
 function catalogueHint(schema) {
   const v = schema.versions || {}
-  if (schema.source !== 'athena') return 'No catalogue in snapshot mode — run the app inside the Docker image.'
   if (!v.tct) return 'No TopCPToolkit in this image — build it with TCT_VERSION to preload its blocks.'
   if (!schema.tctDataDir) return `TopCPToolkit ${v.tct} is built, but its reference configs were not found (see the backend log: data dir missing or a dangling symlink).`
   return `TopCPToolkit ${v.tct} is built, but none of its reference configs declares AddConfigBlocks.`
