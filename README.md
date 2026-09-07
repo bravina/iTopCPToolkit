@@ -12,13 +12,12 @@ An interactive web GUI for building [TopCPToolkit](https://topcptoolkit.docs.cer
 2. [Architecture](#architecture)
 3. [Where the blocks come from](#where-the-blocks-come-from)
 4. [Running locally](#running-locally)
-5. [The schema snapshot](#the-schema-snapshot)
-6. [Deployment](#deployment)
-7. [Testing](#testing)
-8. [Metadata the GUI understands](#metadata-the-gui-understands)
-9. [How to add a new application mode](#how-to-add-a-new-application-mode)
-10. [Code map](#code-map)
-11. [Contributing](#contributing)
+5. [Deployment](#deployment)
+6. [Testing](#testing)
+7. [Metadata the GUI understands](#metadata-the-gui-understands)
+8. [How to add a new application mode](#how-to-add-a-new-application-mode)
+9. [Code map](#code-map)
+10. [Contributing](#contributing)
 
 ---
 
@@ -98,7 +97,12 @@ in "Others", harvested TCT blocks in "TopCPToolkit".
 
 ## Running locally
 
-### With Docker (recommended — full Athena introspection)
+The app only runs inside the AnalysisBase image: the schema is built by
+introspecting a live Athena `ConfigFactory`, so without it the backend refuses
+to start (`python app.py` exits with an error) and `/api/schema` answers
+HTTP 503. Build and run the Docker image.
+
+### Docker (the only supported way to run the app)
 
 ```bash
 # Build without TopCPToolkit (AnalysisBase blocks only)
@@ -116,48 +120,6 @@ docker build \
 docker run --name tct-gui-app -p 5001:5000 tct-gui
 # Open http://localhost:5001
 ```
-
-### Without Docker (no Athena — uses the schema snapshot)
-
-Useful for frontend development. The backend serves
-`frontend/src/schema.snapshot.json` (see below) and shows a "Schema snapshot"
-badge; `/api/introspect` is unavailable in this mode.
-
-```bash
-# Terminal 1: backend
-cd backend
-pip install flask flask-cors pyyaml
-python app.py
-
-# Terminal 2: frontend dev server (proxies /api → localhost:5000)
-cd frontend
-npm install
-npm run dev
-# Open http://localhost:3000
-```
-
----
-
-## The schema snapshot
-
-`frontend/src/schema.snapshot.json` is the introspected schema dumped from a
-real image. It is what the backend serves without Athena and what the frontend
-could be developed against. Regenerate it whenever the target AB/TCT release
-changes:
-
-```bash
-docker build ... -t tct-gui .          # as above, with TCT_VERSION
-docker run --name tct-gui-dump tct-gui bash -c \
-  "source /home/atlas/release_setup.sh && \
-   source /opt/TopCPToolkit/build/*/setup.sh && \
-   python3 /app/backend/scripts/dump_schema.py /app/schema.snapshot.json"
-docker cp tct-gui-dump:/app/schema.snapshot.json frontend/src/schema.snapshot.json
-docker rm tct-gui-dump
-```
-
-The script prints how many blocks and catalogue entries were introspected and
-lists any that failed (a block failing introspection is still served, with an
-`error` field the GUI displays).
 
 ---
 
@@ -294,10 +256,9 @@ The app currently has three modes: Builder, Reader, INTnote Writer.
 
 ```
 backend/
-  app.py              Flask application, routes, schema cache + snapshot fallback
+  app.py              Flask application, routes, schema cache
   introspect.py       Walks ConfigFactory → schema (+ CATEGORIES map)
   catalogue.py        Harvests AddConfigBlocks from the TCT reference configs
-  scripts/dump_schema.py   Writes frontend/src/schema.snapshot.json
   tests/              pytest suite; fake_athena/ stub, fake_blocks/ custom blocks
 
 frontend/src/
