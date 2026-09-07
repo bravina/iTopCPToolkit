@@ -176,19 +176,25 @@ No expected Athena block lists are hardcoded anywhere: tests assert invariants
 and round-trip properties, so they only need updating when behaviour changes
 on purpose.
 
-### Backend (no Docker needed)
+### Backend (needs AnalysisBase — no TopCPToolkit required)
+
+The backend is a mirror of Athena's live `ConfigFactory`, so it is only ever
+tested against the real thing. There is no stand-in for `AnalysisAlgorithmsConfig`:
+without it `conftest.py` aborts collection with an explanatory error.
 
 ```bash
-cd backend
-pip install flask flask-cors pyyaml pytest
-pytest tests/ -v
+docker run --rm -v "$PWD:/src" -w /src/backend \
+  gitlab-registry.cern.ch/atlas/athena/analysisbase:25.2.106 bash -c "
+    source /home/atlas/release_setup.sh &&
+    python3 -m pip install --user flask flask-cors pyyaml pytest &&
+    pytest tests/ -v
+"
 ```
 
-`tests/fake_athena/` is a minimal stand-in for `AnalysisAlgorithmsConfig`
-(same `ConfigFactory` data structures, fake blocks) that is put on `sys.path`
-only when the real package is not importable. `tests/fake_blocks/FakeAlgorithms`
-holds custom blocks used through `AddConfigBlocks`; they only use the public
-`ConfigBlock` API and therefore also work under real Athena.
+`tests/userblocks/AnalysisTestBlocks` stands in for a *user's own analysis
+package*: the module an `AddConfigBlocks` entry points at (TopCPToolkit in
+production, which a plain AnalysisBase image does not have). It uses nothing
+but the public `ConfigBlock` / `groupBlocks` API.
 
 ### Frontend (no Docker needed)
 
@@ -202,7 +208,7 @@ npm run build     # catches JSX / import errors
 Frontend tests run against `src/__tests__/fixtures/schema.js`, a fixture in the
 exact shape of `/api/schema`.
 
-### Inside the image (real Athena)
+### Inside the built image (Athena + TopCPToolkit)
 
 ```bash
 docker run --rm tct-gui bash -c "
@@ -212,13 +218,14 @@ docker run --rm tct-gui bash -c "
 "
 ```
 
-Here the `TestRealFactory` tests run: every block in the live factory must
-introspect without error, grouped blocks must expose several classes, and the
-TCT catalogue must resolve.
+Same suite, with TopCPToolkit on top — worth running before a release to check
+that the real TCT reference configs and their `AddConfigBlocks` entries still
+introspect.
 
 ### CI
 
-`.github/workflows/test.yml` runs the backend suite, the frontend suite and a
+`.github/workflows/test.yml` runs the backend suite (inside the public
+AnalysisBase image — no CERN credentials needed), the frontend suite and a
 production frontend build on every pull request and push to `main`.
 
 ---
@@ -267,7 +274,8 @@ backend/
   app.py              Flask application, routes, schema cache
   introspect.py       Walks ConfigFactory → schema (+ CATEGORIES map)
   catalogue.py        Harvests AddConfigBlocks from the TCT reference configs
-  tests/              pytest suite; fake_athena/ stub, fake_blocks/ custom blocks
+  tests/              pytest suite (needs AnalysisBase); userblocks/ stands in
+                      for a user package registered through AddConfigBlocks
 
 frontend/src/
   App.jsx             Top-level component, mode routing, schema fetch, shortcuts, autosave

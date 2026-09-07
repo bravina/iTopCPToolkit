@@ -1,6 +1,6 @@
 // Schema fixture mirroring the shape served by GET /api/schema (see
-// backend/introspect.py and the fake factory in backend/tests).  Frontend
-// tests run against this instead of a live backend.
+// backend/introspect.py).  Frontend tests run against this instead of a live
+// backend.
 
 export function opt(name, type, def, extra = {}) {
   return {

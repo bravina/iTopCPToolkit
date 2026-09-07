@@ -3,13 +3,16 @@
 # Runs all automated tests on every pull request and every push to main.
 #
 # Jobs:
-#   test-backend   – pytest tests for block_schema structure and Flask routes
-#                    (no Athena needed; runs on a plain ubuntu runner)
+#   test-backend   – pytest for the ConfigFactory introspection and the Flask
+#                    routes, inside an AnalysisBase container.  The backend is
+#                    a mirror of Athena's live ConfigFactory, so it is tested
+#                    against the real thing: there is deliberately no stand-in,
+#                    and the suite refuses to run without Athena (conftest.py).
 #   test-frontend  – vitest unit tests for all JS utility modules + a production build
 #
-# The Athena introspection tests (TestAthenaIntrospection in test_block_schema.py)
-# are automatically skipped here because Athena is not available; they only
-# run inside the Docker build step (see deploy.yml).
+# The AnalysisBase image is public (deploy.yml pulls it without logging in to
+# that registry), so no CERN credentials are needed here.  It ships Athena but
+# not TopCPToolkit, and the tests do not require TCT.
 
 name: Tests
 
@@ -20,24 +23,39 @@ on:
 
 jobs:
 
-  # ── Backend: schema structure + Flask routes ────────────────────────────────
+  # ── Backend: factory introspection + Flask routes ───────────────────────────
   test-backend:
     runs-on: ubuntu-latest
+
+    container:
+      # Keep the tag in sync with AB_TAG in the Dockerfile.
+      image: gitlab-registry.cern.ch/atlas/athena/analysisbase:25.2.106
+      # The image's default user is `atlas`; root is needed to write into the
+      # runner workspace and to pip-install into the release Python.
+      options: --user root
 
     steps:
       - uses: actions/checkout@v6
 
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: '3.11'
-
-      - name: Install dependencies
-        run: pip install flask flask-cors pyyaml pytest
+      # Every `run` step below re-sources the release setup, because GitHub
+      # Actions starts a fresh shell per step.  The environment deliberately is
+      # NOT exported once into $GITHUB_ENV: release_setup.sh does more than set
+      # variables (it defines shell functions such as asetup), and only plain
+      # variables survive a $GITHUB_ENV round-trip.
+      - name: Install Python dependencies
+        run: |
+          source /home/atlas/release_setup.sh
+          # pip is not always present in the release Python — same bootstrap as
+          # the Dockerfile.
+          python3 -m ensurepip --upgrade 2>/dev/null \
+            || (curl -sSL https://bootstrap.pypa.io/get-pip.py | python3)
+          python3 -m pip install --quiet flask flask-cors pyyaml pytest
 
       - name: Run backend tests
         working-directory: backend
-        run: pytest tests/ -v
+        run: |
+          source /home/atlas/release_setup.sh
+          pytest tests/ -v
 
   # ── Frontend: utility unit tests ────────────────────────────────────────────
   test-frontend:

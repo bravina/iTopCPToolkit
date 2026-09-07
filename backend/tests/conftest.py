@@ -2,11 +2,14 @@
 #
 # Test environment setup:
 #   * backend/ on sys.path so `app`, `introspect`, `catalogue` import directly
-#   * tests/fake_blocks/ always on sys.path (FakeAlgorithms works with both the
-#     real and the fake AnalysisAlgorithmsConfig)
-#   * tests/fake_athena/ on sys.path ONLY when the real Athena package is not
-#     importable, so the same test-suite runs on a plain runner and inside the
-#     Docker image (where HAVE_ATHENA is True and real-factory tests run).
+#   * tests/userblocks/ on sys.path so `AnalysisTestBlocks.TestBlocksConfig`
+#     — the stand-in for a user's own analysis package — is importable through
+#     AddConfigBlocks
+#
+# The suite requires a live AnalysisBase environment.  The backend is nothing
+# but a mirror of Athena's ConfigFactory, so testing it against anything other
+# than the real thing would only prove that a replica matches itself.  If
+# Athena is missing we fail here, at collection time, rather than degrading.
 
 import os
 import sys
@@ -16,31 +19,41 @@ import pytest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, ".."))
-sys.path.insert(0, os.path.join(HERE, "fake_blocks"))
+sys.path.insert(0, os.path.join(HERE, "userblocks"))
 
 try:
     import AnalysisAlgorithmsConfig.ConfigFactory  # noqa: F401
-    HAVE_ATHENA = True
-except ImportError:
-    sys.path.insert(0, os.path.join(HERE, "fake_athena"))
-    HAVE_ATHENA = False
+except ImportError as exc:  # pragma: no cover - the message IS the behaviour
+    raise RuntimeError(
+        "\n"
+        "AnalysisAlgorithmsConfig is not importable, so the backend test suite\n"
+        "cannot run here.  These tests introspect the real Athena ConfigFactory;\n"
+        "there is deliberately no stand-in for it.\n"
+        "\n"
+        "Run them inside an AnalysisBase image, with the release set up:\n"
+        "\n"
+        "    source /home/atlas/release_setup.sh\n"
+        "    cd backend && pytest tests/ -v\n"
+        "\n"
+        f"(underlying import error: {exc})"
+    ) from exc
 
 
 @pytest.fixture
 def tct_data_dir(tmp_path):
-    """A fake <build>/data/TopCPToolkit tree with reference configs."""
+    """A stand-in <build>/data/TopCPToolkit tree with reference configs."""
     configs = tmp_path / "configs"
     (configs / "sub").mkdir(parents=True)
     (configs / "a.yaml").write_text(textwrap.dedent("""
         AddConfigBlocks:
-          - modulePath: 'FakeAlgorithms.FakeConfig'
+          - modulePath: 'AnalysisTestBlocks.TestBlocksConfig'
             functionName: 'TutorialConfig'
             algName: 'Tutorial'
             pos: 'Output'
           - modulePath: 'NoSuchModule.Config'
             functionName: 'Missing'
             algName: 'Missing'
-          - modulePath: 'FakeAlgorithms.FakeConfig'
+          - modulePath: 'AnalysisTestBlocks.TestBlocksConfig'
             functionName: 'TutorialGroup'
             algName: 'TutorialGroup'
             superBlocks: 'Jets'
@@ -51,7 +64,7 @@ def tct_data_dir(tmp_path):
     (configs / "sub" / "b.yaml").write_text(textwrap.dedent("""
         AddConfigBlocks:
           Tutorial:
-            modulePath: 'FakeAlgorithms.FakeConfig'
+            modulePath: 'AnalysisTestBlocks.TestBlocksConfig'
             functionName: 'TutorialConfig'
             pos: 'Output'
         Tutorial:

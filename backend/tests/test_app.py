@@ -1,8 +1,9 @@
 # backend/tests/test_app.py
 #
-# Flask routes.  The schema comes from whichever factory is importable (fake on
-# CI, real inside Docker); the catalogue/examples come from the tct_data_dir
-# fixture.  Only response shapes are asserted, never Athena block lists.
+# Flask routes.  The schema comes from the real Athena factory; the catalogue
+# and examples come from the tct_data_dir fixture, whose AddConfigBlocks
+# entries point at the AnalysisTestBlocks package (a stand-in for a user's own
+# analysis package).  Only response shapes are asserted, never Athena block lists.
 
 import json
 
@@ -84,7 +85,7 @@ class TestIntrospect:
                            content_type="application/json")
 
     def test_success(self, client):
-        r = self._post(client, {"modulePath": "FakeAlgorithms.FakeConfig",
+        r = self._post(client, {"modulePath": "AnalysisTestBlocks.TestBlocksConfig",
                                 "functionName": "TutorialConfig", "algName": "MyTutorial",
                                 "pos": "Output"})
         assert r.status_code == 200, r.get_json()
