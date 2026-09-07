@@ -16,33 +16,33 @@ export default function BlockPanel({
 
   return (
     <>
-      <div className="px-5 py-3 border-b border-slate-700 bg-slate-800 shrink-0">
+      <div className="px-5 py-3 border-b border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 shrink-0">
         <div className="flex items-center gap-2 flex-wrap">
-          <h2 className="font-bold text-slate-100">{blockDef.label}</h2>
+          <h2 className="font-bold text-slate-900 dark:text-slate-100">{blockDef.label}</h2>
           {blockDef.custom && (
-            <span className="text-xs px-1.5 py-0.5 rounded bg-purple-900/50 text-purple-300" title="Declared via AddConfigBlocks">custom</span>
+            <span className="text-xs px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300" title="Declared via AddConfigBlocks">custom</span>
           )}
           {blockDef.kind === 'group' && (
-            <span className="text-xs px-1.5 py-0.5 rounded bg-slate-700 text-slate-400" title="A @groupBlocks entry: options are the union of several ConfigBlocks">group</span>
+            <span className="text-xs px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400" title="A @groupBlocks entry: options are the union of several ConfigBlocks">group</span>
           )}
           {docstring && <InfoPopover info={docstring} />}
         </div>
         <p className="text-xs text-slate-500 font-mono mt-0.5 truncate" title={blockDef.classes?.map(c => `${c.module}.${c.cls}`).join('\n')}>
           {blockDef.factoryName}
           {blockDef.classes?.length > 0 && (
-            <span className="text-slate-600"> · {blockDef.classes.map(c => c.cls).join(' + ')}</span>
+            <span className="text-slate-400 dark:text-slate-600"> · {blockDef.classes.map(c => c.cls).join(' + ')}</span>
           )}
         </p>
         {blockDef.error && (
-          <p className="text-xs text-red-400 mt-1 font-mono whitespace-pre-wrap">⚠ Introspection failed: {blockDef.error}</p>
+          <p className="text-xs text-red-600 dark:text-red-400 mt-1 font-mono whitespace-pre-wrap">⚠ Introspection failed: {blockDef.error}</p>
         )}
         {blockDef.dependencies?.length > 0 && (
-          <p className="text-xs text-slate-400 mt-1">
+          <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
             Depends on:{' '}
             {blockDef.dependencies.map(d => {
               const ok = d.blockName === blockDef.name || enabledBlockNames?.has(d.blockName)
               return (
-                <span key={d.blockName} className={`font-mono mr-2 ${ok ? 'text-green-400' : d.required ? 'text-red-400' : 'text-yellow-400'}`}
+                <span key={d.blockName} className={`font-mono mr-2 ${ok ? 'text-green-600 dark:text-green-400' : d.required ? 'text-red-600 dark:text-red-400' : 'text-yellow-600 dark:text-yellow-400'}`}
                   title={d.required ? 'required' : 'optional — reorders after it when present'}>
                   {ok ? '✓' : '✗'} {d.blockName}{d.required ? '' : ' (optional)'}
                 </span>
@@ -61,13 +61,13 @@ export default function BlockPanel({
       ) : (
         <div className="flex-1 overflow-y-auto p-4 space-y-6">
           {blockState.instances.map((inst, idx) => (
-            <div key={inst._id} className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
-              <div className="flex items-center justify-between px-4 py-2 bg-slate-700/50">
-                <span className="text-sm font-semibold text-slate-300">
+            <div key={inst._id} className="bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-2 bg-slate-200/50 dark:bg-slate-700/50">
+                <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">
                   {blockState.instances.length > 1 ? `${blockDef.label} — instance ${idx + 1}` : blockDef.label}
                 </span>
                 {blockState.instances.length > 1 && (
-                  <button onClick={() => onRemoveInstance(inst._id)} className="text-xs text-red-400 hover:text-red-300">
+                  <button onClick={() => onRemoveInstance(inst._id)} className="text-xs text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300">
                     ✕ Remove instance
                   </button>
                 )}
@@ -112,7 +112,7 @@ export default function BlockPanel({
 
           <button
             onClick={onAddInstance}
-            className="w-full py-2 border-2 border-dashed border-slate-600 rounded-xl text-sm text-slate-400 hover:text-slate-200 hover:border-slate-400 transition-colors"
+            className="w-full py-2 border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-xl text-sm text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:border-slate-500 dark:hover:border-slate-400 transition-colors"
             title="Any block may be given several times; the YAML becomes a list"
           >
             + Add {blockDef.label} instance

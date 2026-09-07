@@ -61,9 +61,9 @@ export default function SearchOverlay({ blocks, mode, onNavigate, onClose }) {
       className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh] bg-black/60 backdrop-blur-sm"
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}
     >
-      <div className="w-full max-w-xl bg-slate-800 rounded-xl shadow-2xl border border-slate-600 flex flex-col overflow-hidden">
+      <div className="w-full max-w-xl bg-slate-100 dark:bg-slate-800 rounded-xl shadow-2xl border border-slate-300 dark:border-slate-600 flex flex-col overflow-hidden">
         {/* Search input */}
-        <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-700">
+        <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-200 dark:border-slate-700">
           <span className="text-slate-500 text-sm shrink-0">⌕</span>
           <input
             ref={inputRef}
@@ -72,9 +72,9 @@ export default function SearchOverlay({ blocks, mode, onNavigate, onClose }) {
             onChange={e => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Search blocks and options…"
-            className="flex-1 bg-transparent text-slate-100 text-sm placeholder-slate-500 focus:outline-none"
+            className="flex-1 bg-transparent text-slate-900 dark:text-slate-100 text-sm placeholder-slate-500 focus:outline-none"
           />
-          <kbd className="text-xs text-slate-600 shrink-0">Esc</kbd>
+          <kbd className="text-xs text-slate-400 dark:text-slate-600 shrink-0">Esc</kbd>
         </div>
 
         {/* Results */}
@@ -90,14 +90,14 @@ export default function SearchOverlay({ blocks, mode, onNavigate, onClose }) {
               key={r.id}
               onMouseDown={() => select(r)}
               className={`flex items-start gap-3 px-4 py-2.5 cursor-pointer transition-colors ${
-                i === activeIdx ? 'bg-blue-600/25' : 'hover:bg-slate-700/50'
+                i === activeIdx ? 'bg-blue-100 dark:bg-blue-600/25' : 'hover:bg-slate-200/50 dark:hover:bg-slate-700/50'
               }`}
             >
               {/* Type badge */}
               <span className={`text-xs px-1.5 py-0.5 rounded font-mono shrink-0 mt-0.5 ${
                 r.kind === 'block'
-                  ? 'bg-blue-900/60 text-blue-300'
-                  : 'bg-slate-700 text-slate-400'
+                  ? 'bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300'
+                  : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400'
               }`}>
                 {r.kind === 'block' ? 'block' : r.optType ?? 'opt'}
               </span>
@@ -105,7 +105,7 @@ export default function SearchOverlay({ blocks, mode, onNavigate, onClose }) {
               <div className="flex-1 min-w-0">
                 {/* Main label */}
                 <div className="flex items-baseline gap-2 flex-wrap">
-                  <span className="text-sm font-mono text-slate-100">
+                  <span className="text-sm font-mono text-slate-900 dark:text-slate-100">
                     <Highlight text={r.blockLabel} query={query} />
                     {r.optionName && (
                       <>
@@ -115,7 +115,7 @@ export default function SearchOverlay({ blocks, mode, onNavigate, onClose }) {
                     )}
                   </span>
                   {r.kind === 'block' && r.blockName !== r.blockLabel && (
-                    <span className="text-xs text-slate-600 font-mono truncate">{r.blockName}</span>
+                    <span className="text-xs text-slate-400 dark:text-slate-600 font-mono truncate">{r.blockName}</span>
                   )}
                 </div>
 
@@ -129,7 +129,7 @@ export default function SearchOverlay({ blocks, mode, onNavigate, onClose }) {
 
               {/* Default value hint for options */}
               {r.defaultStr && (
-                <span className="text-xs text-slate-600 font-mono shrink-0 mt-0.5 ml-auto">
+                <span className="text-xs text-slate-400 dark:text-slate-600 font-mono shrink-0 mt-0.5 ml-auto">
                   = {r.defaultStr}
                 </span>
               )}
@@ -138,11 +138,11 @@ export default function SearchOverlay({ blocks, mode, onNavigate, onClose }) {
         </ul>
 
         {/* Footer */}
-        <div className="px-4 py-2 border-t border-slate-700/50 flex items-center gap-4 text-xs text-slate-600">
+        <div className="px-4 py-2 border-t border-slate-200/50 dark:border-slate-700/50 flex items-center gap-4 text-xs text-slate-400 dark:text-slate-600">
           <span><kbd className="font-mono">↑↓</kbd> navigate</span>
           <span><kbd className="font-mono">↵</kbd> jump to</span>
           <span><kbd className="font-mono">Esc</kbd> close</span>
-          <span className="ml-auto text-slate-700">⌘F / Ctrl+F</span>
+          <span className="ml-auto text-slate-400 dark:text-slate-700">⌘F / Ctrl+F</span>
           <span>{results.length} result{results.length !== 1 ? 's' : ''}</span>
         </div>
       </div>
@@ -161,7 +161,7 @@ function Highlight({ text, query }) {
   return (
     <>
       {text.slice(0, idx)}
-      <mark className="bg-yellow-500/30 text-yellow-200 rounded-sm">{text.slice(idx, idx + q.length)}</mark>
+      <mark className="bg-yellow-100 dark:bg-yellow-500/30 text-yellow-800 dark:text-yellow-200 rounded-sm">{text.slice(idx, idx + q.length)}</mark>
       {text.slice(idx + q.length)}
     </>
   )

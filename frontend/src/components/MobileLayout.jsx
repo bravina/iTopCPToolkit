@@ -18,15 +18,15 @@ export default function MobileLayout({ sidebar, editor, preview }) {
       </div>
 
       {/* Tab bar */}
-      <nav className="shrink-0 flex border-t border-slate-700 bg-slate-800">
+      <nav className="shrink-0 flex border-t border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800">
         {tabs.map(tab => (
           <button
             key={tab.id}
             onClick={() => setActive(tab.id)}
             className={`flex-1 py-2 flex flex-col items-center gap-0.5 text-xs transition-colors ${
               active === tab.id
-                ? 'text-blue-400 border-t-2 border-blue-400'
-                : 'text-slate-400 hover:text-slate-200'
+                ? 'text-blue-600 dark:text-blue-400 border-t-2 border-blue-500 dark:border-blue-400'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
             }`}
           >
             <span className="text-base leading-none">{tab.icon}</span>

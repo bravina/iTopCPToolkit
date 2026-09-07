@@ -39,13 +39,13 @@ export default function YamlPreview({ config, schema, onExport, selected, onSele
   }, [selected, blocks.length])
 
   return (
-    <div className="h-full bg-slate-900 border-l border-slate-700 flex flex-col">
-      <div className="px-4 py-3 border-b border-slate-700 space-y-2">
+    <div className="h-full bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-700 flex flex-col">
+      <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 space-y-2">
         <div className="flex items-center justify-between">
-          <span className="text-sm font-semibold text-slate-200">YAML Preview</span>
+          <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">YAML Preview</span>
           <button
             onClick={handleCopy}
-            className="text-xs px-2 py-1 rounded bg-slate-700 hover:bg-slate-600 text-slate-300 transition-colors"
+            className="text-xs px-2 py-1 rounded bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 transition-colors"
           >
             {copied ? '✓ Copied' : 'Copy'}
           </button>
@@ -55,7 +55,7 @@ export default function YamlPreview({ config, schema, onExport, selected, onSele
             type="text"
             value={filename}
             onChange={e => setFilename(e.target.value)}
-            className="flex-1 text-xs font-mono bg-slate-700 border border-slate-600 rounded px-2 py-1 text-slate-200 focus:outline-none focus:border-blue-400"
+            className="flex-1 text-xs font-mono bg-slate-200 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded px-2 py-1 text-slate-800 dark:text-slate-200 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
             placeholder="filename.yaml"
           />
           <button
@@ -69,7 +69,7 @@ export default function YamlPreview({ config, schema, onExport, selected, onSele
 
       <div
         ref={scrollRef}
-        className="yaml-preview flex-1 min-h-0 overflow-auto p-4 text-xs text-slate-300 leading-relaxed whitespace-pre"
+        className="yaml-preview flex-1 min-h-0 overflow-auto p-4 text-xs text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre"
       >
         {blocks.length === 0 ? EMPTY_PLACEHOLDER : blocks.map((b, i) => {
           const selectable = isSelectable(b.name)
@@ -85,9 +85,9 @@ export default function YamlPreview({ config, schema, onExport, selected, onSele
               title={selectable ? `Edit ${b.name}` : undefined}
               className={`border-l-2 -ml-0.5 transition-colors ${i < blocks.length - 1 ? 'mb-5' : ''} ${
                 active
-                  ? 'bg-blue-500/10 border-blue-400 text-slate-100'
+                  ? 'bg-blue-50 dark:bg-blue-500/10 border-blue-500 dark:border-blue-400 text-slate-900 dark:text-slate-100'
                   : 'border-transparent'
-              } ${selectable ? 'cursor-pointer hover:bg-slate-800/60' : ''}`}
+              } ${selectable ? 'cursor-pointer hover:bg-slate-100/60 dark:hover:bg-slate-800/60' : ''}`}
             >
               {b.text.replace(/\n+$/, '')}
             </div>

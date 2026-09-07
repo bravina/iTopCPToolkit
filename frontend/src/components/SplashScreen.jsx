@@ -12,7 +12,7 @@ import { useEffect, useRef } from 'react'
  *   - the title is sized to the viewport width, so it never overflows on phones
  *   - particle glow uses cached sprites instead of per-particle shadowBlur
  *   - click / tap / Esc skip; prefers-reduced-motion shows a short static version
- *   - colours are the app's brand colours (blue-400 / slate-100) on slate-900
+ *   - colours are the app's brand colours, in the theme active when it mounts
  */
 
 // ── Easing ────────────────────────────────────────────────────────────────────
@@ -22,10 +22,33 @@ function easeInQuad(t)   { return t * t }
 function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3) }
 function easeWave(t)     { return t - Math.sin(4 * Math.PI * t) / (4 * Math.PI) }
 
-// ── Palette (matches the header brand mark) ───────────────────────────────────
-const BG    = '#0f172a'            // slate-900
-const BLUE  = [96, 165, 250]       // blue-400
-const WHITE = [241, 245, 249]      // slate-100
+// ── Palettes (match the header brand mark in each theme) ──────────────────────
+const PALETTES = {
+  dark: {
+    bg:       '#0f172a',                              // slate-900
+    blue:     [96, 165, 250],                         // blue-400
+    ink:      [241, 245, 249],                        // slate-100
+    dust:     ['#64748b', '#94a3b8', '#3b82f6'],      // slate-500/400 + blue-500
+    vignette: '30,41,59',                             // slate-800
+    sweep:    '#ffffff',
+    head:     '#dbeafe',                              // blue-100
+    tag:      '#94a3b8',                              // slate-400
+    meta:     '#64748b',                              // slate-500
+  },
+  light: {
+    bg:       '#f8fafc',                              // slate-50
+    blue:     [37, 99, 235],                          // blue-600
+    ink:      [15, 23, 42],                           // slate-900
+    dust:     ['#94a3b8', '#64748b', '#60a5fa'],      // slate-400/500 + blue-400
+    vignette: '148,163,184',                          // slate-400
+    sweep:    '#2563eb',                              // blue-600
+    head:     '#1d4ed8',                              // blue-700
+    tag:      '#475569',                              // slate-600
+    meta:     '#64748b',                              // slate-500
+  },
+}
+const paletteFor = dark => (dark ? PALETTES.dark : PALETTES.light)
+
 const SHADES = [0.88, 0.94, 1, 1.05]
 const pick = arr => arr[Math.floor(Math.random() * arr.length)]
 
@@ -34,10 +57,10 @@ function shade([r, g, b], f) {
   return '#' + [cl(r), cl(g), cl(b)].map(v => v.toString(16).padStart(2, '0')).join('')
 }
 
-// "i" → blue | "Top" → white | "CP" → blue | "Toolkit" → white
-function segmentColour(tx, seg) {
+// "i" → blue | "Top" → ink | "CP" → blue | "Toolkit" → ink
+function segmentColour(tx, seg, pal) {
   const blue = tx < seg[0] || (tx >= seg[1] && tx < seg[2])
-  return shade(blue ? BLUE : WHITE, pick(SHADES))
+  return shade(blue ? pal.blue : pal.ink, pick(SHADES))
 }
 
 // ── Timeline ──────────────────────────────────────────────────────────────────
@@ -137,7 +160,7 @@ function sampleTextPixels(W, H) {
 }
 
 // ── Particles ─────────────────────────────────────────────────────────────────
-function buildLetterParticles(W, H, pts, textLeft, textW, segBoundaries, reduced) {
+function buildLetterParticles(W, H, pts, textLeft, textW, segBoundaries, reduced, pal) {
   const maxPts = 3600
   const thin   = Math.max(1, Math.floor(pts.length / maxPts))
   return pts.filter((_, i) => i % thin === 0).map(t => {
@@ -148,7 +171,7 @@ function buildLetterParticles(W, H, pts, textLeft, textW, segBoundaries, reduced
     const v  = 25 + Math.random() * 60
     return {
       x: sx, y: sy, sx, sy, tx: t.x, ty: t.y, dx: t.x, dy: t.y,
-      colour: segmentColour(t.x, segBoundaries),
+      colour: segmentColour(t.x, segBoundaries, pal),
       size:   0.85 + Math.random() * 0.5,
       delay:  0.04 + frac * 0.5 + Math.random() * 0.08,   // left-to-right reveal
       dvx:    Math.cos(a) * v,
@@ -157,7 +180,7 @@ function buildLetterParticles(W, H, pts, textLeft, textW, segBoundaries, reduced
   })
 }
 
-function buildUnderlineParticles(textLeft, textRight, underlineY, reduced) {
+function buildUnderlineParticles(textLeft, textRight, underlineY, reduced, pal) {
   const count = 320
   return Array.from({ length: count }, (_, i) => {
     const frac = i / (count - 1)
@@ -169,7 +192,7 @@ function buildUnderlineParticles(textLeft, textRight, underlineY, reduced) {
     return {
       x: sx, y: ty, sx, sy: ty, tx, ty, dx: tx, dy: ty, frac,
       arrivalT: 0.22 + frac * 0.62, window: 0.12,
-      colour: shade(BLUE, pick(SHADES)),
+      colour: shade(pal.blue, pick(SHADES)),
       size:   1.1 + Math.random() * 0.5,
       dvx:    Math.cos(a) * v,
       dvy:    Math.sin(a) * v - 20,
@@ -177,25 +200,28 @@ function buildUnderlineParticles(textLeft, textRight, underlineY, reduced) {
   })
 }
 
-function buildAmbient(W, H) {
+function buildAmbient(W, H, pal) {
   return Array.from({ length: 60 }, () => ({
     x: Math.random() * W, y: Math.random() * H,
     vx: (Math.random() - 0.5) * 12, vy: -4 - Math.random() * 10,
     size: 0.6 + Math.random() * 1.2,
     alpha: 0.08 + Math.random() * 0.22,
-    colour: pick(['#64748b', '#94a3b8', '#3b82f6']),
+    colour: pick(pal.dust),
   }))
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
-export default function SplashScreen({ onDone, version }) {
+export default function SplashScreen({ onDone, version, dark = true }) {
   const canvasRef = useRef(null)
   const onDoneRef = useRef(onDone)
   onDoneRef.current = onDone
+  // Captured once: a theme flip mid-animation must not restart it.
+  const darkRef = useRef(dark)
 
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
+    const pal = paletteFor(darkRef.current)
 
     const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
     const phases  = reduced ? REDUCED_PHASES : PHASES
@@ -223,15 +249,15 @@ export default function SplashScreen({ onDone, version }) {
       if (dead) return
 
       const { pts, textLeft, textRight, textW, underlineY, fontSize, segBoundaries } = sampleTextPixels(W, H)
-      const letters   = buildLetterParticles(W, H, pts, textLeft, textW, segBoundaries, reduced)
-      const underline = buildUnderlineParticles(textLeft, textRight, underlineY, reduced)
-      const ambient   = buildAmbient(W, H)
+      const letters   = buildLetterParticles(W, H, pts, textLeft, textW, segBoundaries, reduced, pal)
+      const underline = buildUnderlineParticles(textLeft, textRight, underlineY, reduced, pal)
+      const ambient   = buildAmbient(W, H, pal)
       const sprite    = makeSpriteCache(dpr)
       const c = canvas.getContext('2d')
 
       const vignette = c.createRadialGradient(W / 2, H * 0.42, 0, W / 2, H * 0.42, Math.max(W, H) * 0.75)
-      vignette.addColorStop(0, 'rgba(30,41,59,0.55)')   // slate-800
-      vignette.addColorStop(1, 'rgba(30,41,59,0)')
+      vignette.addColorStop(0, `rgba(${pal.vignette},0.55)`)
+      vignette.addColorStop(1, `rgba(${pal.vignette},0)`)
 
       let phaseIdx = 0, phaseStart = null, lastTs = null
 
@@ -278,7 +304,7 @@ export default function SplashScreen({ onDone, version }) {
 
         c.save()
         c.scale(dpr, dpr)
-        c.fillStyle = BG
+        c.fillStyle = pal.bg
         c.fillRect(0, 0, W, H)
         c.fillStyle = vignette
         c.fillRect(0, 0, W, H)
@@ -321,7 +347,7 @@ export default function SplashScreen({ onDone, version }) {
           if (sweepOn) {
             const d = (p.tx - sweepX) / sweepW
             const g = Math.exp(-d * d)
-            if (g > 0.05) draw(p, g * 0.75, '#ffffff', p.size * 1.5)
+            if (g > 0.05) draw(p, g * 0.75, pal.sweep, p.size * 1.5)
           }
         }
 
@@ -348,7 +374,7 @@ export default function SplashScreen({ onDone, version }) {
         if (phase === 'fly-in') {
           const frontier = clamp01((rawT - 0.22) / 0.62)
           if (frontier > 0 && frontier < 1) {
-            const head = { x: textLeft + frontier * textW, y: underlineY, colour: '#dbeafe', size: 2.6 }
+            const head = { x: textLeft + frontier * textW, y: underlineY, colour: pal.head, size: 2.6 }
             draw(head, 0.9)
           }
         }
@@ -360,10 +386,10 @@ export default function SplashScreen({ onDone, version }) {
         if (captionA > 0) {
           const tagSize = Math.max(11, fontSize * 0.15)
           text(TAGLINE.toUpperCase(), W / 2, underlineY + fontSize * 0.22,
-               { size: tagSize, colour: '#94a3b8', alpha: captionA * 0.9, spacing: tagSize * 0.18 })
+               { size: tagSize, colour: pal.tag, alpha: captionA * 0.9, spacing: tagSize * 0.18 })
           if (version) {
             text(`v${version}`, W / 2, underlineY + fontSize * 0.22 + tagSize * 1.9,
-                 { size: Math.max(10, fontSize * 0.13), colour: '#64748b', alpha: captionA * 0.9 })
+                 { size: Math.max(10, fontSize * 0.13), colour: pal.meta, alpha: captionA * 0.9 })
           }
         }
 
@@ -371,7 +397,7 @@ export default function SplashScreen({ onDone, version }) {
         if (phase === 'fly-in' || phase === 'hold') {
           const a = phase === 'fly-in' ? clamp01(rawT / 0.3) : 1 - easeInQuad(rawT)
           text('Click or press Esc to skip', W / 2, H - 20,
-               { size: 12, colour: '#64748b', alpha: a * 0.6, baseline: 'bottom' })
+               { size: 12, colour: pal.meta, alpha: a * 0.6, baseline: 'bottom' })
         }
 
         c.restore()
@@ -398,7 +424,7 @@ export default function SplashScreen({ onDone, version }) {
       style={{
         position: 'fixed', inset: 0,
         width: '100vw', height: '100vh',
-        display: 'block', background: BG,
+        display: 'block', background: paletteFor(dark).bg,
         zIndex: 9999,
         cursor: 'pointer',
         touchAction: 'none',

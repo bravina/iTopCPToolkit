@@ -94,7 +94,7 @@ export default function CollectionField({ optName, value, onChange, placeholder 
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
-  const kindColor = { container: 'text-blue-400', selection: 'text-purple-400' }
+  const kindColor = { container: 'text-blue-600 dark:text-blue-400', selection: 'text-purple-600 dark:text-purple-400' }
   const kindIcon  = { container: '○', selection: '◉' }
 
   return (
@@ -107,32 +107,32 @@ export default function CollectionField({ optName, value, onChange, placeholder 
         onChange={handleInput}
         onFocus={() => setOpen(true)}
         onKeyDown={handleKeyDown}
-        className="w-full rounded bg-slate-700 border border-slate-600 px-2 py-1 text-sm font-mono text-slate-100 focus:outline-none focus:border-blue-400"
+        className="w-full rounded bg-slate-200 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 px-2 py-1 text-sm font-mono text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
       />
 
       {open && filtered.length > 0 && (
         <ul
           ref={listRef}
-          className="absolute z-50 left-0 top-full mt-0.5 w-full max-h-48 overflow-y-auto bg-slate-800 border border-slate-600 rounded-lg shadow-xl text-xs"
+          className="absolute z-50 left-0 top-full mt-0.5 w-full max-h-48 overflow-y-auto bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg shadow-xl text-xs"
         >
           {filtered.map((s, i) => (
             <li
               key={s.value}
               onMouseDown={() => commit(s.value)}
               className={`flex items-center gap-2 px-3 py-1.5 cursor-pointer ${
-                i === activeIdx ? 'bg-blue-600/30 text-slate-100' : 'hover:bg-slate-700 text-slate-300'
+                i === activeIdx ? 'bg-blue-100 dark:bg-blue-600/30 text-slate-900 dark:text-slate-100' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300'
               }`}
             >
               <span className={`${kindColor[s.kind]} shrink-0`}>{kindIcon[s.kind]}</span>
               <span className="font-mono">{s.label}</span>
-              <span className="ml-auto text-slate-600 shrink-0">{s.hint}</span>
+              <span className="ml-auto text-slate-400 dark:text-slate-600 shrink-0">{s.hint}</span>
             </li>
           ))}
         </ul>
       )}
 
       {open && filtered.length === 0 && query.length > 0 && allSuggestions.length > 0 && (
-        <div className="absolute z-50 left-0 top-full mt-0.5 w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-xs text-slate-500">
+        <div className="absolute z-50 left-0 top-full mt-0.5 w-full bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg px-3 py-2 text-xs text-slate-500">
           No matches. Using custom value.
         </div>
       )}

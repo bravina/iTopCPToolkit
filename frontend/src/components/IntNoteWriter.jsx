@@ -115,18 +115,18 @@ export default function IntNoteWriter({ tctVersion, pdflatex }) {
   // ── Unavailable state ──────────────────────────────────────────────────────
   if (isUnavailable) {
     return (
-      <div className="flex flex-1 items-center justify-center bg-slate-950">
+      <div className="flex flex-1 items-center justify-center bg-slate-50 dark:bg-slate-950">
         <div className="max-w-md text-center space-y-4 px-6">
           <p className="text-4xl opacity-20">✍</p>
-          <h2 className="text-lg font-bold text-slate-300">INTnote Writer unavailable</h2>
+          <h2 className="text-lg font-bold text-slate-700 dark:text-slate-300">INTnote Writer unavailable</h2>
           {!tctVersion && (
-            <div className="bg-red-900/30 border border-red-700 rounded-xl px-4 py-3 text-sm text-red-300">
+            <div className="bg-red-100 dark:bg-red-900/30 border border-red-300 dark:border-red-700 rounded-xl px-4 py-3 text-sm text-red-700 dark:text-red-300">
               ✗ TopCPToolkit was not built into this image.<br />
-              Rebuild with <code className="bg-slate-800 px-1 rounded">TCT_VERSION</code> set.
+              Rebuild with <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">TCT_VERSION</code> set.
             </div>
           )}
           {tctVersion && !pdflatex && (
-            <div className="bg-red-900/30 border border-red-700 rounded-xl px-4 py-3 text-sm text-red-300">
+            <div className="bg-red-100 dark:bg-red-900/30 border border-red-300 dark:border-red-700 rounded-xl px-4 py-3 text-sm text-red-700 dark:text-red-300">
               ✗ <code>pdflatex</code> is not available in this image.<br />
               Rebuild with texlive installed.
             </div>
@@ -141,10 +141,10 @@ export default function IntNoteWriter({ tctVersion, pdflatex }) {
     <div className="flex flex-1 overflow-hidden">
 
       {/* ── Left control panel ── */}
-      <div className="w-64 shrink-0 bg-slate-900 border-r border-slate-700 flex flex-col overflow-y-auto">
+      <div className="w-64 shrink-0 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-700 flex flex-col overflow-y-auto">
 
-        <div className="px-4 py-3 border-b border-slate-700 shrink-0">
-          <h2 className="text-sm font-bold text-amber-400">✍ INTnote Writer</h2>
+        <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 shrink-0">
+          <h2 className="text-sm font-bold text-amber-600 dark:text-amber-400">✍ INTnote Writer</h2>
           <p className="text-xs text-slate-500 mt-0.5">Generate LaTeX from a TopCPToolkit JSON</p>
         </div>
 
@@ -152,7 +152,7 @@ export default function IntNoteWriter({ tctVersion, pdflatex }) {
 
           {/* File upload */}
           <div>
-            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
+            <p className="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-2">
               JSON file
             </p>
             <div
@@ -162,16 +162,16 @@ export default function IntNoteWriter({ tctVersion, pdflatex }) {
               onClick={() => fileRef.current?.click()}
               className={`border-2 border-dashed rounded-xl p-4 flex flex-col items-center gap-1.5 cursor-pointer transition-colors text-center ${
                 dragging
-                  ? 'border-amber-400 bg-amber-500/10'
+                  ? 'border-amber-500 dark:border-amber-400 bg-amber-50 dark:bg-amber-500/10'
                   : jsonFile
-                    ? 'border-green-600 bg-green-900/10'
-                    : 'border-slate-600 hover:border-slate-500 hover:bg-slate-800/40'
+                    ? 'border-green-400 dark:border-green-600 bg-green-50 dark:bg-green-900/10'
+                    : 'border-slate-300 dark:border-slate-600 hover:border-slate-400 dark:hover:border-slate-500 hover:bg-slate-100/40 dark:hover:bg-slate-800/40'
               }`}
             >
               <span className="text-2xl">
                 {jsonFile ? '✓' : dragging ? '📂' : '📄'}
               </span>
-              <span className="text-xs font-medium text-slate-300 break-all leading-snug">
+              <span className="text-xs font-medium text-slate-700 dark:text-slate-300 break-all leading-snug">
                 {jsonFile ? jsonFile.name : 'Drop .json or click to browse'}
               </span>
               {jsonFile && (
@@ -192,19 +192,19 @@ export default function IntNoteWriter({ tctVersion, pdflatex }) {
           {/* Sections */}
           <div>
             <div className="flex items-center justify-between mb-2">
-              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+              <p className="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
                 Sections
               </p>
               <div className="flex gap-2 text-xs">
                 <button type="button"
                   onClick={() => setSelectedSections(new Set(SECTIONS.map(s => s.id)))}
-                  className="text-slate-500 hover:text-slate-300 transition-colors">
+                  className="text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition-colors">
                   All
                 </button>
-                <span className="text-slate-700">|</span>
+                <span className="text-slate-400 dark:text-slate-700">|</span>
                 <button type="button"
                   onClick={() => setSelectedSections(new Set())}
-                  className="text-slate-500 hover:text-slate-300 transition-colors">
+                  className="text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition-colors">
                   None
                 </button>
               </div>
@@ -220,12 +220,12 @@ export default function IntNoteWriter({ tctVersion, pdflatex }) {
                     onClick={() => toggleSection(s.id)}
                     className={`w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors text-left ${
                       on
-                        ? 'bg-amber-900/40 text-amber-200 border border-amber-700/50'
-                        : 'bg-slate-800/40 text-slate-500 border border-transparent hover:bg-slate-800'
+                        ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 border border-amber-300/50 dark:border-amber-700/50'
+                        : 'bg-slate-100/40 dark:bg-slate-800/40 text-slate-500 border border-transparent hover:bg-slate-200 dark:hover:bg-slate-800'
                     }`}
                   >
                     <span className={`w-3.5 h-3.5 rounded text-xs flex items-center justify-center font-bold shrink-0 ${
-                      on ? 'bg-amber-600 text-white' : 'bg-slate-700 text-slate-600'
+                      on ? 'bg-amber-600 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-400 dark:text-slate-600'
                     }`}>
                       {on ? '✓' : ''}
                     </span>
@@ -253,7 +253,7 @@ export default function IntNoteWriter({ tctVersion, pdflatex }) {
             <button
               type="button"
               onClick={() => setShowLog(v => !v)}
-              className="text-xs text-slate-500 hover:text-slate-300 flex items-center gap-1 transition-colors"
+              className="text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 flex items-center gap-1 transition-colors"
             >
               <span>{showLog ? '▾' : '▸'}</span>
               {showLog ? 'Hide' : 'Show'} script log
@@ -263,36 +263,36 @@ export default function IntNoteWriter({ tctVersion, pdflatex }) {
       </div>
 
       {/* ── Right panel: PDF viewer / error / placeholder ── */}
-      <div className="flex flex-col flex-1 overflow-hidden bg-slate-950">
+      <div className="flex flex-col flex-1 overflow-hidden bg-slate-50 dark:bg-slate-950">
 
         {/* Toolbar (only when there is something to show) */}
         {(pdfUrl || error) && (
-          <div className="px-4 py-2 bg-slate-800 border-b border-slate-700 flex items-center gap-3 shrink-0 overflow-x-auto">
+          <div className="px-4 py-2 bg-slate-100 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 flex items-center gap-3 shrink-0 overflow-x-auto">
             {pdfUrl && (
               <>
-                <span className="text-xs text-green-400 shrink-0">✓ PDF ready</span>
+                <span className="text-xs text-green-600 dark:text-green-400 shrink-0">✓ PDF ready</span>
                 <button
                   onClick={downloadPdf}
-                  className="text-xs px-3 py-1 rounded bg-slate-700 hover:bg-slate-600 text-slate-200 transition-colors shrink-0"
+                  className="text-xs px-3 py-1 rounded bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 transition-colors shrink-0"
                 >
                   ↓ Download PDF
                 </button>
                 <button
                   onClick={downloadTex}
-                  className="text-xs px-3 py-1 rounded bg-slate-700 hover:bg-slate-600 text-slate-200 transition-colors shrink-0"
+                  className="text-xs px-3 py-1 rounded bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 transition-colors shrink-0"
                 >
                   ↓ Download .tex
                 </button>
               </>
             )}
             {error && (
-              <span className="text-xs text-red-400 shrink-0">✗ {error.error}</span>
+              <span className="text-xs text-red-600 dark:text-red-400 shrink-0">✗ {error.error}</span>
             )}
             {/* download .tex even on error if the script produced one */}
             {error?.tex && (
               <button
                 onClick={downloadTex}
-                className="text-xs px-3 py-1 rounded bg-slate-700 hover:bg-slate-600 text-slate-300 transition-colors shrink-0"
+                className="text-xs px-3 py-1 rounded bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 transition-colors shrink-0"
               >
                 ↓ Download .tex
               </button>
@@ -302,8 +302,8 @@ export default function IntNoteWriter({ tctVersion, pdflatex }) {
 
         {/* Collapsible log */}
         {showLog && logText && (
-          <div className="bg-slate-900 border-b border-slate-700 max-h-44 overflow-y-auto shrink-0">
-            <pre className="text-xs font-mono text-slate-400 p-3 whitespace-pre-wrap leading-relaxed">
+          <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700 max-h-44 overflow-y-auto shrink-0">
+            <pre className="text-xs font-mono text-slate-600 dark:text-slate-400 p-3 whitespace-pre-wrap leading-relaxed">
               {logText}
             </pre>
           </div>
@@ -314,7 +314,7 @@ export default function IntNoteWriter({ tctVersion, pdflatex }) {
           <div className="flex-1 flex flex-col items-center justify-center gap-3 text-slate-500">
             <span className="text-3xl animate-spin">⟳</span>
             <p className="text-sm">Running script and compiling PDF…</p>
-            <p className="text-xs text-slate-600">This may take a moment</p>
+            <p className="text-xs text-slate-400 dark:text-slate-600">This may take a moment</p>
           </div>
 
         ) : pdfUrl ? (
@@ -327,9 +327,9 @@ export default function IntNoteWriter({ tctVersion, pdflatex }) {
         ) : error ? (
           <div className="flex-1 overflow-y-auto p-6">
             <div className="max-w-2xl mx-auto space-y-4">
-              <div className="bg-red-900/30 border border-red-700 rounded-xl px-4 py-3">
-                <p className="text-sm font-semibold text-red-300 mb-1">Error</p>
-                <p className="text-xs text-red-400 font-mono whitespace-pre-wrap">{error.error}</p>
+              <div className="bg-red-100 dark:bg-red-900/30 border border-red-300 dark:border-red-700 rounded-xl px-4 py-3">
+                <p className="text-sm font-semibold text-red-700 dark:text-red-300 mb-1">Error</p>
+                <p className="text-xs text-red-600 dark:text-red-400 font-mono whitespace-pre-wrap">{error.error}</p>
               </div>
 
               {(error.stdout || error.stderr) && (
@@ -342,7 +342,7 @@ export default function IntNoteWriter({ tctVersion, pdflatex }) {
           </div>
 
         ) : (
-          <div className="flex-1 flex flex-col items-center justify-center gap-3 text-slate-700">
+          <div className="flex-1 flex flex-col items-center justify-center gap-3 text-slate-400 dark:text-slate-700">
             <span className="text-6xl opacity-10 select-none">✍</span>
             <p className="text-sm">Upload a JSON file and click Generate</p>
           </div>
@@ -354,11 +354,11 @@ export default function IntNoteWriter({ tctVersion, pdflatex }) {
 
 function LogBlock({ title, content, maxH = 'max-h-48' }) {
   return (
-    <div className="bg-slate-900 border border-slate-700 rounded-xl overflow-hidden">
-      <p className="text-xs font-semibold text-slate-400 px-4 py-2 border-b border-slate-700 bg-slate-800/50">
+    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
+      <p className="text-xs font-semibold text-slate-600 dark:text-slate-400 px-4 py-2 border-b border-slate-200 dark:border-slate-700 bg-slate-100/50 dark:bg-slate-800/50">
         {title}
       </p>
-      <pre className={`text-xs font-mono text-slate-400 px-4 py-3 whitespace-pre-wrap overflow-x-auto overflow-y-auto ${maxH}`}>
+      <pre className={`text-xs font-mono text-slate-600 dark:text-slate-400 px-4 py-3 whitespace-pre-wrap overflow-x-auto overflow-y-auto ${maxH}`}>
         {content}
       </pre>
     </div>

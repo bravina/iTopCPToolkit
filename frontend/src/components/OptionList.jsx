@@ -54,7 +54,7 @@ export default function OptionList({
         return (
           <div key={origin ?? 'main'}>
             {origin && (
-              <p className="text-xs text-slate-500 font-mono mt-2 mb-0.5 border-b border-slate-800 pb-0.5" title="ConfigBlock class declaring these options">
+              <p className="text-xs text-slate-500 font-mono mt-2 mb-0.5 border-b border-slate-200 dark:border-slate-800 pb-0.5" title="ConfigBlock class declaring these options">
                 {origin}
               </p>
             )}
@@ -64,16 +64,16 @@ export default function OptionList({
       })}
 
       {hiddenExpert > 0 && (
-        <p className="text-xs text-slate-600 italic pt-1">
+        <p className="text-xs text-slate-400 dark:text-slate-600 italic pt-1">
           {hiddenExpert} expert-only option{hiddenExpert > 1 ? 's' : ''} hidden — toggle 🧪 Expert in the header.
         </p>
       )}
 
       {generic.length > 0 && (
         <details className="mt-2 group">
-          <summary className="text-xs uppercase tracking-wider text-slate-500 font-semibold cursor-pointer select-none hover:text-slate-300">
+          <summary className="text-xs uppercase tracking-wider text-slate-500 font-semibold cursor-pointer select-none hover:text-slate-700 dark:hover:text-slate-300">
             {GENERIC_SECTION_LABEL}
-            {isSub && <span className="normal-case tracking-normal font-normal text-slate-600"> — inherited from the parent unless set</span>}
+            {isSub && <span className="normal-case tracking-normal font-normal text-slate-400 dark:text-slate-600"> — inherited from the parent unless set</span>}
           </summary>
           <div className="mt-1">{generic.map(field)}</div>
         </details>

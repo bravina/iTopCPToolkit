@@ -10,7 +10,9 @@ import ModeSelector from './components/ModeSelector.jsx'
 import ConfigReader from './components/ConfigReader.jsx'
 import IntNoteWriter from './components/IntNoteWriter.jsx'
 import SearchOverlay from './components/SearchOverlay.jsx'
+import ThemeToggle from './components/ThemeToggle.jsx'
 import { useConfig } from './hooks/useConfig.js'
+import { useTheme } from './hooks/useTheme.js'
 import { toYamlString } from './utils/yamlSerializer.js'
 import { yamlToConfig } from './utils/yamlToConfig.js'
 import { blocksForConfig, customEntryFromCatalogue, superBlockList } from './utils/schema.js'
@@ -41,10 +43,10 @@ function splashSeen() {
 export function BrandName({ className = '' }) {
   return (
     <span className={className}>
-      <span className="text-blue-400">i</span>
-      <span className="text-slate-100">Top</span>
-      <span className="text-blue-400">CP</span>
-      <span className="text-slate-100">Toolkit</span>
+      <span className="text-blue-600 dark:text-blue-400">i</span>
+      <span className="text-slate-900 dark:text-slate-100">Top</span>
+      <span className="text-blue-600 dark:text-blue-400">CP</span>
+      <span className="text-slate-900 dark:text-slate-100">Toolkit</span>
     </span>
   )
 }
@@ -66,6 +68,7 @@ export default function App() {
   const [searchOpen, setSearchOpen] = useState(false)
   const [showExpert, setShowExpert] = useState(false)
   const isMobile = useIsMobile()
+  const { theme, dark, cycleTheme } = useTheme()
 
   const {
     config, init, load,
@@ -251,15 +254,15 @@ export default function App() {
       : `https://topcptoolkit.docs.cern.ch/${versions.tct}/`
 
   if (loading) return (
-    <div className="min-h-screen bg-slate-900 flex items-center justify-center text-slate-400">
+    <div className="min-h-screen bg-white dark:bg-slate-900 flex items-center justify-center text-slate-600 dark:text-slate-400">
       Loading schema…
     </div>
   )
 
   if (error) return (
-    <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6">
+    <div className="min-h-screen bg-white dark:bg-slate-900 flex items-center justify-center p-6">
       <div className="text-center max-w-xl">
-        <p className="text-red-400 font-semibold mb-2">{error.title}</p>
+        <p className="text-red-600 dark:text-red-400 font-semibold mb-2">{error.title}</p>
         {error.detail && <p className="text-slate-500 text-sm">{error.detail}</p>}
       </div>
     </div>
@@ -290,7 +293,7 @@ export default function App() {
   )
 
   const editorPanel = (
-    <main className="flex flex-col overflow-hidden h-full bg-slate-900">
+    <main className="flex flex-col overflow-hidden h-full bg-white dark:bg-slate-900">
       {selectedDef ? (
         <BlockPanel
           blockDef={selectedDef}
@@ -339,11 +342,12 @@ export default function App() {
         <SplashScreen
           onDone={() => { setShowSplash(false); try { sessionStorage.setItem(SPLASH_SEEN_KEY, '1') } catch { /* ignore */ } }}
           version={versions.app}
+          dark={dark}
         />
       )}
 
-      <div className="app-shell bg-slate-900 text-slate-100 flex flex-col">
-        <header className="h-10 bg-slate-800 border-b border-slate-700 flex items-center px-4 gap-2 shrink-0 overflow-x-auto">
+      <div className="app-shell bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 flex flex-col">
+        <header className="h-10 bg-slate-100 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 flex items-center px-4 gap-2 shrink-0 overflow-x-auto">
           <span className="text-sm font-bold shrink-0">
             <BrandName />
             {versions.app && <span className="text-slate-500 font-normal"> v{versions.app}</span>}
@@ -360,12 +364,12 @@ export default function App() {
             : <Badge tone="red" full="✗ No TopCPToolkit built" short="✗ No TCT" />}
 
           <a href={docsUrl} target="_blank" rel="noreferrer"
-            className="text-xs bg-blue-800/50 text-blue-300 hover:bg-blue-700/50 px-2 py-0.5 rounded transition-colors shrink-0">
+            className="text-xs bg-blue-100 dark:bg-blue-800/50 text-blue-700 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-700/50 px-2 py-0.5 rounded transition-colors shrink-0">
             <span className="hidden sm:inline">📖 TopCPToolkit docs</span>
             <span className="sm:hidden">📖 Docs</span>
           </a>
 
-          {notice && <span className="text-xs text-green-400 shrink-0">{notice}</span>}
+          {notice && <span className="text-xs text-green-600 dark:text-green-400 shrink-0">{notice}</span>}
 
           {mode === 'builder' && (
             <div className="flex items-center gap-1 shrink-0">
@@ -382,22 +386,26 @@ export default function App() {
             <button
               type="button"
               onClick={() => setSearchOpen(true)}
-              className="text-xs px-2 py-0.5 rounded bg-slate-700/50 hover:bg-slate-600 text-slate-400 hover:text-slate-200 transition-colors shrink-0 flex items-center gap-1.5"
+              className="text-xs px-2 py-0.5 rounded bg-slate-200/50 dark:bg-slate-700/50 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition-colors shrink-0 flex items-center gap-1.5"
               title="Search blocks and options (⌘F / Ctrl+F)"
             >
               <span>⌕</span>
               <span className="hidden md:inline">Search</span>
-              <kbd className="hidden md:inline text-slate-600 font-mono text-xs ml-1">⌘F</kbd>
+              <kbd className="hidden md:inline text-slate-400 dark:text-slate-600 font-mono text-xs ml-1">⌘F</kbd>
             </button>
           )}
 
-          {mode && (
-            <div className="ml-auto flex items-center gap-1 shrink-0">
-              <ModeBtn active={mode === 'builder'} color="bg-blue-600" onClick={() => setMode('builder')}>⚙ Builder</ModeBtn>
-              <ModeBtn active={mode === 'reader'} color="bg-emerald-700" onClick={() => setMode('reader')}>◉ Reader</ModeBtn>
-              <ModeBtn active={mode === 'intnote'} color="bg-amber-600" onClick={() => setMode('intnote')}>✍ INTnote</ModeBtn>
-            </div>
-          )}
+          <div className="ml-auto flex items-center gap-1 shrink-0">
+            {mode && (
+              <>
+                <ModeBtn active={mode === 'builder'} color="bg-blue-600" onClick={() => setMode('builder')}>⚙ Builder</ModeBtn>
+                <ModeBtn active={mode === 'reader'} color="bg-emerald-700" onClick={() => setMode('reader')}>◉ Reader</ModeBtn>
+                <ModeBtn active={mode === 'intnote'} color="bg-amber-600" onClick={() => setMode('intnote')}>✍ INTnote</ModeBtn>
+                <span className="w-px h-4 mx-1 bg-slate-200 dark:bg-slate-700" aria-hidden="true" />
+              </>
+            )}
+            <ThemeToggle theme={theme} dark={dark} onCycle={cycleTheme} />
+          </div>
         </header>
 
         {!showSplash && mode === null && (
@@ -450,9 +458,9 @@ function catalogueHint(schema) {
 
 function Badge({ tone, full, short }) {
   const cls = {
-    green: 'bg-green-800/50 text-green-300',
-    yellow: 'bg-yellow-800/50 text-yellow-300',
-    red: 'bg-red-800/50 text-red-300',
+    green: 'bg-green-100 dark:bg-green-800/50 text-green-700 dark:text-green-300',
+    yellow: 'bg-yellow-100 dark:bg-yellow-800/50 text-yellow-700 dark:text-yellow-300',
+    red: 'bg-red-100 dark:bg-red-800/50 text-red-700 dark:text-red-300',
   }[tone]
   return (
     <span className={`text-xs ${cls} px-2 py-0.5 rounded shrink-0`}>
@@ -466,7 +474,7 @@ function HeaderBtn({ children, onClick, disabled, active, title }) {
   return (
     <button type="button" onClick={onClick} disabled={disabled} title={title}
       className={`text-xs px-2 py-0.5 rounded transition-colors disabled:opacity-30 ${
-        active ? 'bg-purple-700/60 text-purple-100' : 'bg-slate-700/50 hover:bg-slate-600 text-slate-300'}`}>
+        active ? 'bg-purple-100 dark:bg-purple-700/60 text-purple-800 dark:text-purple-100' : 'bg-slate-200/50 dark:bg-slate-700/50 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300'}`}>
       {children}
     </button>
   )
@@ -476,7 +484,7 @@ function ModeBtn({ children, active, color, onClick }) {
   return (
     <button type="button" onClick={onClick}
       className={`text-xs px-2 py-0.5 rounded transition-colors ${
-        active ? `${color} text-white` : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700'}`}>
+        active ? `${color} text-white` : 'text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700'}`}>
       {children}
     </button>
   )

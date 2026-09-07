@@ -56,6 +56,14 @@ accepts. Nothing about blocks, options or defaults is hand-maintained.
 fetches the schema once and does editing, serialisation, validation and
 autocomplete in the browser.
 
+**Light and dark** (`hooks/useTheme.js`): the header's ☀/☾ control cycles
+system → light → dark, and the choice is remembered in `localStorage`.  The
+default, *system*, follows `prefers-color-scheme` and re-follows it live when
+the OS switches.  Tailwind runs in `darkMode: 'class'`: light is the base
+palette and every dark rule is a `dark:` variant, keyed off a `dark` class on
+`<html>` that `index.html` also sets before the first paint (no white flash).
+When adding UI, write both — e.g. `bg-white dark:bg-slate-900`.
+
 ---
 
 ## Where the blocks come from
@@ -279,8 +287,10 @@ frontend/src/
     SearchOverlay.jsx      Global search (⌘F) across blocks and options
     ModeSelector.jsx, SplashScreen.jsx, InfoPopover.jsx, YamlLoader.jsx,
     ResizablePanels.jsx, MobileLayout.jsx, IntNoteWriter.jsx
+    ThemeToggle.jsx        Header control cycling system → light → dark
   hooks/
     useConfig.js       Reducer for the builder state with undo/redo
+    useTheme.js        Colour-scheme preference (localStorage + `dark` class)
   utils/
     configState.js     Builder state shape and constructors
     schema.js          Effective schema (base + AddConfigBlocks), option predicates

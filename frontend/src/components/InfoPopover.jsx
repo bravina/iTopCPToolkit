@@ -160,8 +160,8 @@ export default function InfoPopover({ info }) {
         title={pinned ? 'Click to unpin' : 'Click to pin open'}
         className={`ml-1 focus:outline-none text-xs leading-none select-none rounded transition-colors ${
           pinned
-            ? 'text-blue-300 ring-1 ring-blue-400/70'
-            : 'text-slate-500 hover:text-blue-300'
+            ? 'text-blue-700 dark:text-blue-300 ring-1 ring-blue-500/70 dark:ring-blue-400/70'
+            : 'text-slate-500 hover:text-blue-700 dark:hover:text-blue-300'
         }`}
       >
         ⓘ
@@ -173,8 +173,8 @@ export default function InfoPopover({ info }) {
           style={style}
           onMouseEnter={() => { hoverRef.current.pop = true; cancelClose() }}
           onMouseLeave={() => { hoverRef.current.pop = false; scheduleClose() }}
-          className={`bg-slate-800 border rounded-lg shadow-2xl p-3 text-xs text-slate-200 leading-relaxed overflow-y-auto ${
-            pinned ? 'border-blue-400/70' : 'border-slate-600'
+          className={`bg-slate-100 dark:bg-slate-800 border rounded-lg shadow-2xl p-3 text-xs text-slate-800 dark:text-slate-200 leading-relaxed overflow-y-auto ${
+            pinned ? 'border-blue-500/70 dark:border-blue-400/70' : 'border-slate-300 dark:border-slate-600'
           }`}
         >
           {pinned && (
@@ -182,7 +182,7 @@ export default function InfoPopover({ info }) {
               type="button"
               onClick={closeNow}
               title="Unpin"
-              className="float-right ml-2 -mt-0.5 text-slate-500 hover:text-blue-300 leading-none"
+              className="float-right ml-2 -mt-0.5 text-slate-500 hover:text-blue-700 dark:hover:text-blue-300 leading-none"
             >
               📌
             </button>
@@ -192,11 +192,11 @@ export default function InfoPopover({ info }) {
             rehypePlugins={[rehypeKatex]}
             components={{
               code: ({ children }) => (
-                <code className="bg-slate-700 px-1 rounded font-mono break-all">{children}</code>
+                <code className="bg-slate-200 dark:bg-slate-700 px-1 rounded font-mono break-all">{children}</code>
               ),
               a: ({ href, children }) => (
                 <a href={href} target="_blank" rel="noreferrer"
-                  className="text-blue-400 underline hover:text-blue-300 break-all">{children}</a>
+                  className="text-blue-600 dark:text-blue-400 underline hover:text-blue-700 dark:hover:text-blue-300 break-all">{children}</a>
               ),
               p: ({ children }) => <p className="mb-1.5 last:mb-0">{children}</p>,
               ul: ({ children }) => <ul className="list-disc ml-4 mb-1 space-y-0.5">{children}</ul>,

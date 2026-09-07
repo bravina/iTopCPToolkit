@@ -36,17 +36,17 @@ export default function YamlLoader({ onLoad, label = 'Load Configuration' }) {
   return (
     <div className="flex-1 flex items-center justify-center p-8">
       <div className="w-full max-w-xl">
-        <h2 className="text-xl font-bold text-slate-100 mb-1">{label}</h2>
-        <p className="text-sm text-slate-400 mb-6">Load a TopCPToolkit YAML configuration file.</p>
+        <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100 mb-1">{label}</h2>
+        <p className="text-sm text-slate-600 dark:text-slate-400 mb-6">Load a TopCPToolkit YAML configuration file.</p>
 
         {/* Tabs */}
-        <div className="flex gap-0 rounded-lg overflow-hidden border border-slate-700 mb-4">
+        <div className="flex gap-0 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 mb-4">
           {[['drop', '↓ Drop / Browse'], ['paste', '</> Paste']].map(([id, lbl]) => (
             <button
               key={id}
               type="button"
               onClick={() => setTab(id)}
-              className={`flex-1 py-2 text-xs font-semibold transition-colors ${tab === id ? 'bg-slate-700 text-slate-100' : 'bg-slate-800/50 text-slate-500 hover:text-slate-300'}`}
+              className={`flex-1 py-2 text-xs font-semibold transition-colors ${tab === id ? 'bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-slate-100' : 'bg-slate-100/50 dark:bg-slate-800/50 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
             >
               {lbl}
             </button>
@@ -61,12 +61,12 @@ export default function YamlLoader({ onLoad, label = 'Load Configuration' }) {
             onClick={() => fileRef.current?.click()}
             className={`border-2 border-dashed rounded-xl p-12 flex flex-col items-center gap-3 cursor-pointer transition-colors ${
               dragging
-                ? 'border-blue-400 bg-blue-500/10'
-                : 'border-slate-600 hover:border-slate-500 hover:bg-slate-800/50'
+                ? 'border-blue-500 dark:border-blue-400 bg-blue-50 dark:bg-blue-500/10'
+                : 'border-slate-300 dark:border-slate-600 hover:border-slate-400 dark:hover:border-slate-500 hover:bg-slate-100/50 dark:hover:bg-slate-800/50'
             }`}
           >
             <span className="text-4xl">{dragging ? '📂' : '📄'}</span>
-            <p className="text-sm text-slate-300 font-medium">
+            <p className="text-sm text-slate-700 dark:text-slate-300 font-medium">
               {dragging ? 'Release to load' : 'Drop your YAML file here'}
             </p>
             <p className="text-xs text-slate-500">or click to browse</p>
@@ -88,7 +88,7 @@ export default function YamlLoader({ onLoad, label = 'Load Configuration' }) {
               rows={12}
               spellCheck={false}
               placeholder="Paste your YAML here…"
-              className="w-full rounded-xl bg-slate-800 border border-slate-600 px-4 py-3 text-xs font-mono text-slate-200 focus:outline-none focus:border-blue-400 resize-y"
+              className="w-full rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 px-4 py-3 text-xs font-mono text-slate-800 dark:text-slate-200 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400 resize-y"
             />
             <button
               type="button"
@@ -102,7 +102,7 @@ export default function YamlLoader({ onLoad, label = 'Load Configuration' }) {
         )}
 
         {error && (
-          <div className="mt-4 rounded-lg bg-red-900/30 border border-red-700 px-4 py-3 text-xs text-red-300 font-mono">
+          <div className="mt-4 rounded-lg bg-red-100 dark:bg-red-900/30 border border-red-300 dark:border-red-700 px-4 py-3 text-xs text-red-700 dark:text-red-300 font-mono">
             {error}
           </div>
         )}

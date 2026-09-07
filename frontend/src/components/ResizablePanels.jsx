@@ -60,7 +60,7 @@ export default function ResizablePanels({ children, initialSizes, minSize = 8 })
         <div
           key={`divider-${i}`}
           onMouseDown={e => startDrag(e, i)}
-          className="w-1 shrink-0 bg-slate-700 hover:bg-blue-500 cursor-col-resize transition-colors active:bg-blue-400"
+          className="w-1 shrink-0 bg-slate-200 dark:bg-slate-700 hover:bg-blue-500 cursor-col-resize transition-colors active:bg-blue-400"
           title="Drag to resize"
         />
       )

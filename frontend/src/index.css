@@ -3,6 +3,14 @@
 @tailwind utilities;
 
 /*
+ * Page ground.  The app paints its own surfaces, but the document behind them
+ * (overscroll, the area under a short page) must follow the theme too.
+ */
+@layer base {
+  body { @apply bg-white text-slate-900 dark:bg-slate-900 dark:text-slate-100; }
+}
+
+/*
  * App shell: a *definite* viewport height (not min-height) so the header +
  * panel columns form an unbroken definite-height chain and each column
  * scrolls on its own instead of growing the window.  `dvh` where supported,
