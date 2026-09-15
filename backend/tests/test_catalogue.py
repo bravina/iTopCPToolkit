@@ -23,9 +23,11 @@ from catalogue import (
 
 def test_iter_config_files_only_yaml(tct_data_dir):
     files = [os.path.relpath(f, tct_data_dir / "configs") for f in iter_config_files(str(tct_data_dir))]
-    assert files == ["a.yaml", "broken.yaml",
-                     os.path.join("CI_test_00", "fragment.yaml"),
+    # sorted by full path, so a directory sorts by its name: "CI_test_00" before
+    # "a.yaml" (uppercase first), and notes.txt is not a config at all
+    assert files == [os.path.join("CI_test_00", "fragment.yaml"),
                      os.path.join("CI_test_00", "reco.yaml"),
+                     "a.yaml", "broken.yaml",
                      os.path.join("sub", "b.yaml")]
 
 

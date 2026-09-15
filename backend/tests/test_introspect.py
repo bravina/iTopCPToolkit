@@ -381,8 +381,11 @@ class TestIntrospectionErrors:
 
 class TestEventSelectionKeywords:
 
-    @pytest.fixture(scope="class")
+    @pytest.fixture
     def keywords(self):
+        # Function-scoped on purpose: a class-scoped fixture declared as an
+        # instance method is deprecated in pytest 9, and keywordSpecs() is
+        # cached upstream anyway, so there is nothing to save here.
         kws = event_selection_keywords()
         if kws is None:
             pytest.skip("this release does not expose EventSelectionConfig.keywordSpecs()")
