@@ -60,9 +60,58 @@ def test_build_catalogue_introspects_entries(tct_data_dir):
     assert grp["factoryName"] == "Jets.TutorialGroup"
     assert grp["category"] == "TopCPToolkit"
 
-    missing = by["Missing"]["block"]
-    assert missing["error"] and "NoSuchModule" in missing["error"]
-    assert missing["options"] == []
+    # The NoSuchModule entry of the fixture is not offered at all.
+    assert "Missing" not in by
+
+
+def test_unimportable_blocks_are_dropped(tct_data_dir, examples_dir):
+    """A block whose module this build lacks is not offered."""
+    (examples_dir / "Analysis" / "GRP" / "Good_example1" / "reco.yaml").write_text(
+        "AddConfigBlocks:\n"
+        "  - modulePath: 'NotInThisRelease.SomeConfig'\n"
+        "    functionName: 'SomeConfig'\n"
+        "    algName: 'FromTheFuture'\n"
+    )
+    by = {e["algName"]: e for e in build_catalogue(str(tct_data_dir))}
+    assert "FromTheFuture" not in by
+    assert "Tutorial" in by, "dropping one entry must not disturb the others"
+
+
+def test_a_module_whose_own_import_fails_is_dropped_too(tct_data_dir, examples_dir):
+    """The module is present, but it imports something this build lacks."""
+    (examples_dir / "Analysis" / "GRP" / "Good_example1" / "reco.yaml").write_text(
+        "AddConfigBlocks:\n"
+        "  - modulePath: 'AnalysisTestBlocks.BrokenImportConfig'\n"
+        "    functionName: 'BrokenImportConfig'\n"
+        "    algName: 'BrokenImport'\n"
+    )
+    by = {e["algName"]: e for e in build_catalogue(str(tct_data_dir))}
+    assert "BrokenImport" not in by
+
+
+def test_other_introspection_failures_are_still_listed(tct_data_dir, examples_dir):
+    """Only a missing module is silent: a real block that breaks stays visible."""
+    (examples_dir / "Analysis" / "GRP" / "Good_example1" / "reco.yaml").write_text(
+        "AddConfigBlocks:\n"
+        "  - modulePath: 'AnalysisTestBlocks.TestBlocksConfig'\n"
+        "    functionName: 'NoSuchFunction'\n"
+        "    algName: 'Broken'\n"
+    )
+    by = {e["algName"]: e for e in build_catalogue(str(tct_data_dir))}
+    assert "Broken" in by, "an importable module that fails is the user's to see"
+    assert by["Broken"]["block"]["error"]
+    assert by["Broken"]["block"]["missingModule"] is False
+
+
+def test_introspect_entry_still_reports_a_missing_module(tct_data_dir):
+    """The /introspect path must not go silent: the user's own config needs the error."""
+    block = catalogue.introspect_entry({
+        "modulePath": "NotInThisRelease.SomeConfig",
+        "functionName": "SomeConfig",
+        "algName": "FromTheFuture",
+    })
+    assert "NotInThisRelease" in block["error"]
+    assert block["missingModule"] is True
 
 
 def test_meta_annotations_reach_the_schema(tct_data_dir):
@@ -137,6 +186,33 @@ def test_resolve_includes_reports_a_missing_fragment(examples_dir):
     path = str(examples_dir / "Analysis" / "GRP" / "BrokenInclude_example1" / "reco.yaml")
     with pytest.raises(FileNotFoundError):
         resolve_includes(path)
+
+
+def test_a_scalar_include_still_merges_and_stays_quiet(examples_dir, recwarn):
+    """
+    Athena warns that `include:` should be a list, and can merge it anyway.
+    The config belongs to the examples repository, so the warning must not
+    reach the root logger on every startup.
+    """
+    good = examples_dir / "Analysis" / "GRP" / "Good_example1"
+    (good / "reco.yaml").write_text(
+        "include: Good_example1/fragment.yaml\n"
+        "CommonServices:\n"
+        "  runSystematics: false\n"
+    )
+    config, merged = resolve_includes(str(good / "reco.yaml"))
+    assert merged, "the fragment is still merged"
+    assert config["CommonServices"]["systematicsHistogram"] == "systematics"
+    assert config["CommonServices"]["runSystematics"] is False, "the local value still wins"
+    assert list(recwarn) == [], "Athena's warning must not escape"
+
+
+def test_a_warning_does_not_hide_a_real_failure(examples_dir):
+    """Capturing warnings must not swallow the exception a stale include raises."""
+    broken = examples_dir / "Analysis" / "GRP" / "BrokenInclude_example1" / "reco.yaml"
+    broken.write_text("include: BrokenInclude_example1/gone.yaml\n")
+    with pytest.raises(Exception):
+        resolve_includes(str(broken))
 
 
 def test_config_is_loadable_against_the_real_factory():

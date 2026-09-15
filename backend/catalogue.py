@@ -32,6 +32,7 @@ import copy
 import glob
 import logging
 import os
+import warnings
 from typing import Any, Dict, List, NamedTuple, Optional
 
 import yaml
@@ -185,13 +186,17 @@ def introspect_entry(entry: Dict[str, Any], factory=None) -> Dict[str, Any]:
         fb = find_factory_block(factory, alg_name, entry.get("superBlocks"))
         block = block_from_factory(fb, factory, is_sub=bool(entry.get("superBlocks")))
     except Exception as exc:  # noqa: BLE001
-        logger.warning("Cannot introspect AddConfigBlocks entry %s (%s.%s): %s",
-                       alg_name, entry["modulePath"], entry["functionName"], exc)
+        # A missing module is expected of a stale example; the caller decides
+        # what to do with it, and build_catalogue logs one line for the lot.
+        level = logging.DEBUG if isinstance(exc, ModuleNotFoundError) else logging.WARNING
+        logger.log(level, "Cannot introspect AddConfigBlocks entry %s (%s.%s): %s",
+                   alg_name, entry["modulePath"], entry["functionName"], exc)
         block = {
             "name": alg_name, "factoryName": alg_name, "kind": "class",
             "category": None, "label": label_for(alg_name), "classes": [],
             "options": [], "dependencies": [], "subBlocks": [], "parents": [],
             "error": f"{type(exc).__name__}: {exc}",
+            "missingModule": isinstance(exc, ModuleNotFoundError),
         }
     block["category"] = category_for(alg_name, TCT_CATEGORY)
     return block
@@ -204,6 +209,13 @@ def build_catalogue(data_dir: Optional[str], factory_maker=make_factory) -> List
     Both the configs shipped with TopCPToolkit and the TopCPToolkit_Examples
     checkout are scanned: since TCT v3.7.0 ships only its CI configs, the
     examples repository is where most custom blocks are now declared.
+
+    Entries whose ``modulePath`` is not importable are dropped, on the same
+    grounds as an example that no longer loads: the module belongs to a release
+    or an analysis package this image does not have, so the block cannot be
+    configured here and listing it only offers the user something broken.  The
+    ``/introspect`` endpoint still reports the error in full, because there the
+    entry comes from the user's own config and the failure is theirs to fix.
     """
     sources = example_sources(data_dir)
     if not sources:
@@ -214,11 +226,17 @@ def build_catalogue(data_dir: Optional[str], factory_maker=make_factory) -> List
             rel = os.path.relpath(path, source.root).replace(os.sep, "/")
             labels[path] = f"{source.name}/{rel}"
     entries = harvest_add_config_blocks(list(labels), label=labels.get)
+    usable, missing = [], []
     for entry in entries:
         # A fresh factory per entry: algName collisions between configs must
         # not poison each other, and registration is cheap.
         entry["block"] = introspect_entry(entry, factory_maker())
-    return entries
+        (missing if entry["block"].get("missingModule") else usable).append(entry)
+    if missing:
+        logger.info("Skipped %d custom block(s) whose module is not in this build: %s",
+                    len(missing),
+                    ", ".join(f"{e['algName']} ({e['modulePath']})" for e in missing))
+    return usable
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -293,6 +311,12 @@ def resolve_includes(path: str) -> tuple:
 
     Returns ``(config_dict, merged)``; raises whatever the resolution raises
     (a missing fragment is a FileNotFoundError, i.e. a stale example).
+
+    Athena warns about a config it can still merge — a scalar ``include:``
+    rather than a list, say.  Those warnings are about someone else's YAML, and
+    reprinting them on every startup tells the user nothing they can act on, so
+    they are captured and logged at debug level against the file that caused
+    them instead of reaching the root logger.
     """
     from AnalysisAlgorithmsConfig.ConfigText import combineConfigFiles
     # _find_fragment reads $DATAPATH unconditionally; outside a set-up release
@@ -302,7 +326,11 @@ def resolve_includes(path: str) -> tuple:
         config = yaml.safe_load(fh)
     if not isinstance(config, dict):
         raise ValueError(f"{path} is not a YAML mapping")
-    merged = combineConfigFiles(config, _include_roots(path), fragment_key="include")
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        merged = combineConfigFiles(config, _include_roots(path), fragment_key="include")
+    for w in caught:
+        logger.debug("%s: %s: %s", path, w.category.__name__, w.message)
     return config, bool(merged)
 
 
