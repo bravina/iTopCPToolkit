@@ -44,20 +44,32 @@ export function inferFieldType(name) {
 // ── Option roles ──────────────────────────────────────────────────────────────
 
 /**
- * Role of an option, taken only from the upstream `meta.role`: 'container'
- * (defines a container name), 'containerRef' (reads `container[.selection]`),
- * 'selection' (defines a selection name), or null.
+ * Role of an option: 'container' (defines a container name), 'containerRef'
+ * (reads `container[.selection]`), 'selection' (defines a selection name), or
+ * null.  A declared upstream `meta.role` always wins.
  *
- * The single exception is 'inherited': a sub-block `containerName`, which
- * TextConfig propagates from the parent instance rather than declaring anew.
+ * Two name-based fallbacks apply to `containerName` only, and only when the
+ * option is NOT annotated upstream:
  *
- * There is deliberately no name-based fallback — an option the upstream block
- * does not annotate gets no role, and is treated as an ordinary value.
+ *  - in a sub-block it is 'inherited': TextConfig propagates it from the
+ *    parent instance rather than declaring it anew;
+ *  - at root level it counts as 'container'.  This is a temporary bridge:
+ *    AB 25.2.110 annotates the blocks that READ a container (Thinning,
+ *    ObjectCutFlow, PtEtaSelection, PerEventSF, IFF/MCTC decorations) but not
+ *    yet the object blocks that DEFINE one (Jets, Electrons, …), so without it
+ *    every `containerName: AnaJets` would be reported as an undefined
+ *    reference.  The fallback can only ADD definitions, i.e. silence a
+ *    warning, never raise a false one.  Delete it once the object blocks carry
+ *    `meta={'role':'container'}` upstream (see .claude/UPSTREAM_MRS.txt).
+ *
+ * There is deliberately no other name-based fallback — an option the upstream
+ * block does not annotate gets no role, and is treated as an ordinary value.
  */
 export function optionRole(opt, { isSub = false } = {}) {
   const declared = opt?.meta?.role
   if (typeof declared === 'string' && declared) return declared
   if (isSub && opt?.name === 'containerName') return 'inherited'
+  if (!isSub && opt?.name === 'containerName') return 'container'   // temporary bridge, see above
   return null
 }
 

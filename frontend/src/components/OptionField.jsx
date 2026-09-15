@@ -3,7 +3,7 @@ import InfoPopover from './InfoPopover.jsx'
 import CollectionField from './CollectionField.jsx'
 import SelectionCutsEditor from './SelectionCutsEditor.jsx'
 import { getAutocompleteMode } from '../utils/collectionRegistry.js'
-import { isExpertOption, isRequiredOption, optionChoices } from '../utils/schema.js'
+import { isExpertOption, isRequiredOption, optionChoices, optionMaxChoices } from '../utils/schema.js'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -56,6 +56,44 @@ function ChoiceField({ opt, value, onChange, choices }) {
       {!known && value !== '' && value != null && <option value={value}>{String(value)} (not in choices)</option>}
       {choices.map(c => <option key={String(c)} value={c}>{String(c)}</option>)}
     </select>
+  )
+}
+
+/**
+ * A `list` option with `meta.choices`: pick several of a fixed set
+ * (e.g. CommonServices.onlySystematicsCategories).  `maxChoices` caps how many
+ * may be on at once; unset means no limit.
+ */
+function MultiChoiceField({ opt, value, onChange, choices, max }) {
+  const selected = Array.isArray(value) ? value.map(String) : (value ? [String(value)] : [])
+  const atCap = max !== null && selected.length >= max
+  function toggle(choice) {
+    const next = selected.includes(choice) ? selected.filter(c => c !== choice) : [...selected, choice]
+    onChange(next.length ? next : '')
+  }
+  return (
+    <div>
+      <div className="flex flex-wrap gap-1">
+        {choices.map(c => {
+          const on = selected.includes(String(c))
+          return (
+            <button type="button" key={String(c)} onClick={() => toggle(String(c))} disabled={!on && atCap}
+              aria-pressed={on}
+              className={`text-xs font-mono px-1.5 py-0.5 rounded border transition-colors ${on
+                ? 'bg-blue-600 border-blue-600 text-white'
+                : 'bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-400 hover:border-blue-500 disabled:opacity-40 disabled:hover:border-slate-300 dark:disabled:hover:border-slate-600'}`}>
+              {String(c)}
+            </button>
+          )
+        })}
+      </div>
+      {selected.some(c => !choices.some(k => String(k) === c)) && (
+        <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5">
+          not in choices: {selected.filter(c => !choices.some(k => String(k) === c)).join(', ')}
+        </p>
+      )}
+      {max !== null && <p className="text-xs text-slate-400 dark:text-slate-600 mt-0.5">at most {max}</p>}
+    </div>
   )
 }
 
@@ -143,15 +181,11 @@ function JsonField({ value, onChange, expect }) {
 }
 
 function StringField({ opt, value, onChange, blockDef, isSub, placeholder, keywords }) {
-  const multiline = opt.meta?.multiline || opt.name === 'selectionCuts'
+  // AB 25.2.110 allows only 'choices' and 'role' in meta, so there is no
+  // upstream marker for "this string holds several lines".  selectionCuts is
+  // the one such option and has an editor of its own.
   if (opt.name === 'selectionCuts') {
     return <SelectionCutsEditor value={value ?? ''} onChange={onChange} keywords={keywords} />
-  }
-  if (multiline) {
-    return (
-      <textarea value={value ?? ''} onChange={e => onChange(e.target.value)} rows={4} spellCheck={false}
-        className={`${INPUT} resize-y`} placeholder={placeholder} />
-    )
   }
   if (getAutocompleteMode(opt, { isSub, blockDef })) {
     return <CollectionField optName={opt.name} value={value ?? ''} onChange={onChange} placeholder={placeholder} />
@@ -173,6 +207,7 @@ export default function OptionField({
 
   function renderInput() {
     if (opt.type === 'bool') return <BoolField value={value} onChange={onChange} defaultValue={opt.default} inheritedValue={inheritedValue} />
+    if (choices && opt.type === 'list') return <MultiChoiceField opt={opt} value={value} onChange={onChange} choices={choices} max={optionMaxChoices(opt)} />
     if (choices) return <ChoiceField opt={opt} value={value} onChange={onChange} choices={choices} />
     if (opt.type === 'int' || opt.type === 'float') return <NumberField opt={opt} value={value} onChange={onChange} placeholder={placeholder} />
     if (opt.type === 'list') return <ListField value={value} onChange={onChange} placeholder={placeholder} />

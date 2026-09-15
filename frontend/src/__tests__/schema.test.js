@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import {
   effectiveBlocks, categorize, labelFor, customEntryFromCatalogue, customEntryToBlock,
-  optionsByOrigin, isRequiredOption, isExpertOption, isGenericOption, optionChoices, opaqueBlock,
+  optionsByOrigin, isRequiredOption, isExpertOption, isGenericOption, optionChoices,
+  optionMaxChoices, opaqueBlock,
 } from '../utils/schema.js'
 import { buildSchemaLookup } from '../utils/schemaLookup.js'
 import { SCHEMA, CATALOGUE, findBlock } from './fixtures/schema.js'
@@ -76,6 +77,16 @@ describe('option helpers', () => {
     expect(isExpertOption(byName.propertyOverrides)).toBe(true)
     expect(optionChoices(byName.systematicsModelJES)).toEqual(['All', 'Category'])
     expect(optionChoices(byName.minPt)).toBeNull()
+  })
+
+  it('reads the choices cap the backend split off the upstream tuple', () => {
+    const cs = findBlock(SCHEMA.blocks, 'CommonServices')
+    const cats = cs.options.find(o => o.name === 'onlySystematicsCategories')
+    expect(optionChoices(cats)).toEqual(['jets', 'JER', 'electrons'])
+    expect(optionMaxChoices(cats)).toBeNull()          // upstream cap is None
+    expect(optionMaxChoices({ ...cats, meta: { ...cats.meta, maxChoices: 2 } })).toBe(2)
+    expect(optionMaxChoices({ meta: { choices: ['a'] } })).toBeNull()
+    expect(optionMaxChoices(null)).toBeNull()
   })
   it('optionsByOrigin groups non-generic options by declaring class in order', () => {
     const groups = optionsByOrigin(jets)

@@ -91,6 +91,11 @@ There are three sources, mirroring how a TopCPToolkit YAML file works:
    with one-click "add"; `AddConfigBlocks` is written to the YAML only for
    blocks actually used. Coverage therefore follows the reference configs —
    a TCT block appears in the GUI once some shipped config declares it.
+   Since TCT v3.7.0 the only configs shipped in `share/configs` are the CI ones
+   (`CI_test_01`); the analysis examples moved to the ATLAS-internal
+   [TopCPToolkit_Examples](https://gitlab.cern.ch/atlas/amg/software/topcptoolkit_examples)
+   repository, so the harvested catalogue is correspondingly smaller. Blocks
+   outside it are still reachable through "Add custom block…" below.
 
 3. **Anything else** — the Builder's "Add custom block…" form and the Reader
    both call `POST /api/introspect` for entries not in the catalogue (any
@@ -114,14 +119,23 @@ HTTP 503. Build and run the Docker image.
 
 ```bash
 # Build without TopCPToolkit (AnalysisBase blocks only)
-docker build --build-arg AB_TAG=25.2.106 -t tct-gui .
+docker build --build-arg AB_TAG=25.2.110 -t tct-gui .
 
 # Build with a specific TopCPToolkit version (adds the TCT catalogue, templates and INTnote Writer)
-export CERN_TOKEN=glpat-xxxxxxxxxxxx   # CERN GitLab personal access token
+docker build \
+  --build-arg AB_TAG=25.2.110 \
+  --build-arg TCT_VERSION=v3.7.0 \
+  -t tct-gui .
+
+# TopCPToolkit (gitlab.cern.ch/atlas/amg/software/TopCPToolkit) is public, so no
+# token is needed.  For a private fork, pass a CERN GitLab PAT as a build secret
+# and point TCT_REPO at it:
+export CERN_TOKEN=glpat-xxxxxxxxxxxx
 docker build \
   --secret id=cern_token,env=CERN_TOKEN \
-  --build-arg AB_TAG=25.2.106 \
-  --build-arg TCT_VERSION=v3.6.0 \
+  --build-arg TCT_REPO=gitlab.cern.ch/<you>/TopCPToolkit.git \
+  --build-arg AB_TAG=25.2.110 \
+  --build-arg TCT_VERSION=v3.7.0 \
   -t tct-gui .
 
 # Run
@@ -151,9 +165,10 @@ To release a new version, update `VERSION` and push to `main`.
 |---|---|---|
 | `CERN_REGISTRY_USER` | Secret | Harbor registry username |
 | `CERN_REGISTRY_TOKEN` | Secret | Harbor CLI secret (from registry.cern.ch → User Profile) |
-| `CERN_TOKEN` | Secret | CERN GitLab PAT (only needed for TopCPToolkit builds) |
-| `AB_TAG` | Variable | AnalysisBase tag (e.g. `25.2.106`), optional |
-| `TCT_VERSION` | Variable | TopCPToolkit version (e.g. `v3.6.0`), optional |
+| `CERN_TOKEN` | Secret | CERN GitLab PAT — optional, only for a private TopCPToolkit fork |
+| `AB_TAG` | Variable | AnalysisBase tag (e.g. `25.2.110`), optional |
+| `TCT_VERSION` | Variable | TopCPToolkit version (e.g. `v3.7.0`), optional |
+| `TCT_REPO` | Variable | TopCPToolkit repository, optional (default `gitlab.cern.ch/atlas/amg/software/TopCPToolkit.git`) |
 
 ### One-time OKD setup
 
@@ -184,7 +199,7 @@ without it `conftest.py` aborts collection with an explanatory error.
 
 ```bash
 docker run --rm -v "$PWD:/src" -w /src/backend \
-  gitlab-registry.cern.ch/atlas/athena/analysisbase:25.2.106 bash -c "
+  gitlab-registry.cern.ch/atlas/athena/analysisbase:25.2.110 bash -c "
     source /home/atlas/release_setup.sh &&
     python3 -m pip install --user flask flask-cors pyyaml pytest &&
     pytest tests/ -v

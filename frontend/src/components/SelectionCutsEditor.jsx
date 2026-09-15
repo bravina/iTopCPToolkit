@@ -1,7 +1,9 @@
 import { useState, useMemo } from 'react'
 import {
-  SIGNS, stripSave, splitCutLines, joinCutLines, parseCutLine, serializeCutLine, defaultArgs,
+  SIGNS, stripDeprecated, splitCutLines, joinCutLines, parseCutLine, serializeCutLine,
+  defaultArgs, keywordNames,
 } from '../utils/eventSelection.js'
+import { useRegistry } from '../contexts/RegistryContext.js'
 
 /**
  * Editor for EventSelection.selectionCuts (one cut per line).
@@ -9,12 +11,13 @@ import {
  * Without a keyword spec in the schema it is a plain textarea.  With a spec
  * (`schema.keywords`, provided upstream by EventSelectionConfig) it offers a
  * row-based editor where each line's arguments are typed inputs; lines the
- * spec cannot parse stay editable as raw text.  `SAVE` lines are flagged
- * (deprecated upstream) with a one-click removal.
+ * spec cannot parse stay editable as raw text.  Lines whose keyword upstream
+ * marks `deprecated` (currently `SAVE`) are flagged with a one-click removal;
+ * which keywords those are comes from the spec, never from a hardcoded name.
  */
 export default function SelectionCutsEditor({ value, onChange, keywords }) {
   const [visual, setVisual] = useState(!!keywords)
-  const { hadSave } = useMemo(() => stripSave(value), [value])
+  const { dropped } = useMemo(() => stripDeprecated(value, keywords), [value, keywords])
   const specAvailable = !!keywords && Object.keys(keywords).length > 0
 
   return (
@@ -22,11 +25,11 @@ export default function SelectionCutsEditor({ value, onChange, keywords }) {
       <div className="flex items-center justify-between px-3 py-1 bg-slate-200 dark:bg-slate-700 border-b border-slate-300 dark:border-slate-600">
         <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wide">Selection cuts</span>
         <div className="flex items-center gap-2">
-          {hadSave && (
-            <button type="button" onClick={() => onChange(stripSave(value).text)}
+          {dropped.length > 0 && (
+            <button type="button" onClick={() => onChange(stripDeprecated(value, keywords).text)}
               className="text-xs px-2 py-0.5 rounded bg-yellow-100 dark:bg-yellow-800/60 hover:bg-yellow-200 dark:hover:bg-yellow-700 text-yellow-800 dark:text-yellow-200"
-              title="SAVE is deprecated: the event filter is created automatically at the end of each EventSelection">
-              ⚠ remove SAVE
+              title={keywords?.[dropped[0]]?.info || 'This keyword is deprecated upstream'}>
+              ⚠ remove {[...new Set(dropped)].join(', ')}
             </button>
           )}
           {specAvailable && (
@@ -61,7 +64,7 @@ export default function SelectionCutsEditor({ value, onChange, keywords }) {
 
 function RowEditor({ value, onChange, keywords }) {
   const [lines, setLines] = useState(() => splitCutLines(value))
-  const kwNames = Object.keys(keywords)
+  const kwNames = keywordNames(keywords)
 
   function commit(next) {
     setLines(next)
@@ -100,7 +103,7 @@ const SMALL = 'rounded bg-slate-200 dark:bg-slate-700 border border-slate-300 da
 
 function CutRow({ line, keywords, onChange, onDelete, onMoveUp, onMoveDown, canMoveUp, canMoveDown }) {
   const parsed = parseCutLine(line.raw, keywords)
-  const kwNames = Object.keys(keywords)
+  const kwNames = keywordNames(keywords)
   const structured = parsed.spec && parsed.args && !parsed.error
   const isComment = parsed.keyword === null
 
@@ -108,7 +111,7 @@ function CutRow({ line, keywords, onChange, onDelete, onMoveUp, onMoveDown, canM
     onChange(serializeCutLine(kw, defaultArgs(kw, keywords), keywords))
   }
   function setArg(name, v) {
-    onChange(serializeCutLine(parsed.keyword, { ...parsed.args, [name]: v }, keywords))
+    onChange(serializeCutLine(parsed.keyword, { ...parsed.args, [name]: v }, keywords, parsed.form))
   }
 
   return (
@@ -125,7 +128,7 @@ function CutRow({ line, keywords, onChange, onDelete, onMoveUp, onMoveDown, canM
       {structured
         ? (parsed.spec.freeText
             ? <input type="text" value={parsed.args.text} onChange={e => setArg('text', e.target.value)} className={`${SMALL} flex-1 min-w-0`} placeholder="expression" />
-            : parsed.spec.args.map(a => <ArgInput key={a.name} spec={a} value={parsed.args[a.name]} onChange={v => setArg(a.name, v)} />))
+            : (parsed.form || []).map(a => <ArgInput key={a.name} spec={a} value={parsed.args[a.name]} onChange={v => setArg(a.name, v)} />))
         : (
           <input type="text" value={line.raw} onChange={e => onChange(e.target.value)}
             className={`${SMALL} flex-1 min-w-0 ${parsed.error ? 'border-amber-400/60 dark:border-amber-600/60 text-amber-800 dark:text-amber-200' : ''}`}
@@ -167,15 +170,38 @@ function ArgInput({ spec, value, onChange }) {
   if (spec.type === 'flag') {
     return (
       <label className="flex items-center gap-1 text-xs text-slate-600 dark:text-slate-400 shrink-0 cursor-pointer">
-        <input type="checkbox" checked={!!value} onChange={e => onChange(e.target.checked ? spec.name : '')} /> {spec.name}
+        <input type="checkbox" checked={value === true} onChange={e => onChange(e.target.checked)} /> {spec.name}
       </label>
     )
   }
-  const numeric = spec.type === 'float' || spec.type === 'int'
+  if (spec.type === 'container') return <ContainerArg spec={spec} value={value} onChange={onChange} label={label} />
+  const numeric = (spec.type === 'float' || spec.type === 'int') && !spec.signed
   return (
     <label className="flex items-center gap-1 shrink-0">{label}
       <input type={numeric ? 'number' : 'text'} value={value ?? ''} onChange={e => onChange(e.target.value)}
         placeholder={spec.optional ? 'opt.' : spec.type} className={`${SMALL} ${numeric ? 'w-24' : 'w-28'}`} />
+    </label>
+  )
+}
+
+/**
+ * A `container` argument (`Name` or `Name.selection`), completed from the
+ * collection registry built out of the rest of the config.
+ */
+function ContainerArg({ spec, value, onChange, label }) {
+  const registry = useRegistry()
+  const listId = `cut-containers-${spec.name}`
+  const options = [
+    ...registry.collections.map(c => c.name),
+    ...registry.withSelections,
+  ]
+  return (
+    <label className="flex items-center gap-1 shrink-0">{label}
+      <input type="text" list={listId} value={value ?? ''} onChange={e => onChange(e.target.value)}
+        placeholder="Container[.selection]" className={`${SMALL} w-40`} />
+      <datalist id={listId}>
+        {[...new Set(options)].map(o => <option key={o} value={o} />)}
+      </datalist>
     </label>
   )
 }

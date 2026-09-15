@@ -91,12 +91,19 @@ describe('optionRole', () => {
     expect(optionRole(opt('x', 'str', '', { meta: { choices: ['a'] } }))).toBeNull()
   })
 
-  it('keeps containerName propagation in sub-blocks', () => {
+  it('keeps containerName propagation in sub-blocks, and defines at root', () => {
     const jets = findBlock(SCHEMA.blocks, 'Jets')
     const containerName = jets.options.find(o => o.name === 'containerName')
     expect(optionRole(containerName, { isSub: true })).toBe('inherited')
-    expect(optionRole(containerName, { isSub: false })).toBeNull()
-    expect(optionRole(containerName)).toBeNull()
+    // Temporary bridge: an un-annotated root containerName defines a container.
+    expect(optionRole(containerName, { isSub: false })).toBe('container')
+    expect(optionRole(containerName)).toBe('container')
+  })
+
+  it('lets a declared role override the containerName fallback', () => {
+    const declared = opt('containerName', 'str', '', { meta: { role: 'containerRef' } })
+    expect(optionRole(declared)).toBe('containerRef')
+    expect(optionRole(declared, { isSub: true })).toBe('containerRef')
   })
 
   it('never infers a role from the option name', () => {
@@ -104,8 +111,10 @@ describe('optionRole', () => {
     for (const name of ['electronID', 'electronIsol', 'muonID', 'jetCollection']) {
       expect(optionRole(opt(name, 'str', ''))).toBeNull()
     }
+    // containerName is the one exception (see optionRole): everything else
+    // stays roleless until upstream annotates it.
     for (const name of ['electrons', 'muons', 'jets', 'outputName', 'selectionName',
-                        'containerName', 'inputParticles', 'minPt']) {
+                        'inputParticles', 'minPt']) {
       expect(optionRole(opt(name, 'str', ''))).toBeNull()
     }
   })
@@ -148,23 +157,56 @@ describe('registry with declared roles', () => {
 })
 
 describe('registry without declared roles', () => {
-  it('is empty when no option anywhere declares a role', () => {
+  it('knows only the containers named by a root containerName', () => {
+    // No option declares a role, so the containerName bridge is all that is
+    // left: it defines containers, and nothing is a reference or a selection.
     const fromYaml = buildRegistryFromYaml(YAML, NO_ROLES)
-    expect(fromYaml.collections).toEqual([])
+    expect(fromYaml.collections.map(c => c.name)).toEqual(['AnaJets', 'AnaElectrons'])
     expect(fromYaml.selections).toEqual([])
     expect(fromYaml.withSelections).toEqual([])
-    expect(fromYaml.byType).toEqual({})
 
     const fromState = buildRegistryFromState(yamlToConfigSync(YAML, schemaWith(NO_ROLES)), NO_ROLES)
     expect(fromState).toEqual(fromYaml)
   })
 
-  it('picks up exactly the roles the plain fixture happens to declare', () => {
+  it('picks up the roles the plain fixture declares, plus containerName', () => {
     // fixtures/schema.js annotates only JVT.selectionName (selection) and
-    // EventSelection.electrons (containerRef), so nothing defines a container.
+    // EventSelection.electrons (containerRef); the containers come from the
+    // root containerName fallback.
     const reg = buildRegistryFromYaml(YAML, SCHEMA.blocks)
-    expect(reg.collections).toEqual([])
+    expect(reg.collections.map(c => c.name)).toEqual(['AnaJets', 'AnaElectrons'])
     expect(reg.withSelections).toEqual(['AnaJets.jvt'])
+  })
+})
+
+describe('partial upstream annotation (AnalysisBase 25.2.110)', () => {
+  // 25.2.110 annotates the blocks that READ a container but not the object
+  // blocks that DEFINE one.  Taken literally that makes every `containerName:
+  // AnaJets` an undefined reference; the fallback in optionRole is what keeps
+  // the GUI quiet until the object blocks are annotated too.
+  const AB_110 = mapOptions(SCHEMA.blocks, (o, b) => {
+    if (b.name === 'Thinning' && o.name === 'containerName') return withRole(o, 'containerRef')
+    if (o.name === 'outputName') return withRole(o, 'container')
+    return o
+  })
+
+  it('does not report the object containers as undefined', () => {
+    const yaml = {
+      Jets: [{ containerName: 'AnaJets' }],
+      Electrons: { containerName: 'AnaElectrons' },
+      Thinning: { containerName: 'AnaJets', outputName: 'OutJets' },
+    }
+    const registry = buildRegistryFromYaml(yaml, AB_110)
+    expect(registry.collections.map(c => c.name)).toEqual(['AnaJets', 'AnaElectrons', 'OutJets'])
+    expect(checkDepsFromYaml(yaml, registry, AB_110)).toEqual([])
+  })
+
+  it('still reports a container nothing defines', () => {
+    const yaml = { Jets: [{ containerName: 'AnaJets' }], Thinning: { containerName: 'NoSuchJets' } }
+    const registry = buildRegistryFromYaml(yaml, AB_110)
+    const issues = checkDepsFromYaml(yaml, registry, AB_110)
+    expect(issues).toHaveLength(1)
+    expect(issues[0].message).toMatch(/NoSuchJets/)
   })
 })
 

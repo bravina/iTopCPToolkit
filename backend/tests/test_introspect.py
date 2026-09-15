@@ -6,7 +6,7 @@
 # Two kinds of assertion:
 #   * invariants that must hold for every block, whatever upstream registers;
 #   * exact anchors on a handful of blocks that are stable in AnalysisBase
-#     25.2.106 (CommonServices, Jets, PtEtaSelection).
+#     25.2.110 (CommonServices, Jets, PtEtaSelection).
 # There is deliberately no hardcoded list of Athena block names anywhere: a new
 # upstream block must never make this suite red.
 
@@ -18,7 +18,8 @@ from AnalysisAlgorithmsConfig.ConfigBlock import ConfigBlock
 
 from introspect import (
     CATEGORY_ORDER, GENERIC_OPTIONS, KNOWN_TYPES, block_from_factory, build_schema,
-    find_factory_block, json_safe, label_for, make_factory, type_name,
+    event_selection_keywords, find_factory_block, json_safe, label_for, make_factory,
+    normalise_meta, type_name,
 )
 
 
@@ -80,6 +81,27 @@ class TestHelpers:
         assert json_safe({"a": [1, (2, 3), pred, str]}) == {"a": [1, [2, 3], "pred", "str"]}
         assert json_safe(None) is None
 
+    def test_normalise_meta_splits_the_choices_tuple(self):
+        # Upstream ships choices as (list[str], int | None); the GUI wants the
+        # list and the cap as separate keys.
+        assert normalise_meta({"choices": (["a", "b"], None)}) == {
+            "choices": ["a", "b"], "maxChoices": None}
+        assert normalise_meta({"choices": (["a", "b"], 2)}) == {
+            "choices": ["a", "b"], "maxChoices": 2}
+
+    def test_normalise_meta_passes_roles_and_unknown_keys_through(self):
+        assert normalise_meta({"role": "containerRef"}) == {"role": "containerRef"}
+        assert normalise_meta({"role": "container", "somethingNew": (1, 2)}) == {
+            "role": "container", "somethingNew": [1, 2]}
+
+    def test_normalise_meta_tolerates_other_shapes(self):
+        assert normalise_meta(None) is None
+        assert normalise_meta({}) is None
+        assert normalise_meta("nonsense") is None
+        # A bare list (not the upstream tuple) is kept as the choices themselves.
+        assert normalise_meta({"choices": ["a", "b", "c"]}) == {
+            "choices": ["a", "b", "c"], "maxChoices": None}
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # The real factory: invariants
@@ -139,7 +161,7 @@ class TestRealFactoryBlocks:
         assert o["generic"] is False
 
     def test_common_services(self, schema):
-        # NB: in AnalysisBase 25.2.106 CommonServices is a @groupBlocks function
+        # NB: in AnalysisBase 25.2.110 CommonServices is a @groupBlocks function
         # (it appends CommonServicesConfig + TruthCollectionsFixerBlock), not a
         # single class — hence kind "group" here.
         cs = by_name(schema["blocks"], "CommonServices")
@@ -249,7 +271,7 @@ class TestRealFactoryOptions:
                 if not found:
                     # A factory default may name something the block does not
                     # declare, in which case it has nowhere to land and never
-                    # reaches the schema.  In AB 25.2.106 that is the case for
+                    # reaches the schema.  In AB 25.2.110 that is the case for
                     # Output and Thinning, both registered with
                     # `defaults={'configName': ...}` while neither block declares
                     # a `configName` option or constructor argument.
@@ -281,7 +303,7 @@ class TestConstructorOptions:
     ``FactoryBlock.makeConfig`` fills constructor arguments from the factory
     ``defaults=``, and ``ConfigText`` accepts them as YAML keys (funcOpts), so
     the schema exposes them as options with ``origin == "__init__"``.  Every
-    block AnalysisBase 25.2.106 registers has a zero-argument constructor, so
+    block AnalysisBase 25.2.110 registers has a zero-argument constructor, so
     this path is exercised with a scratch registration instead.
     """
 
@@ -351,3 +373,38 @@ class TestIntrospectionErrors:
         json.dumps(schema)
         # every other block still introspected fine
         assert [b["factoryName"] for b in schema["blocks"] if b["error"]] == ["BrokenTestBlock"]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# EventSelection keyword specification (AB 25.2.110 and later)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestEventSelectionKeywords:
+
+    @pytest.fixture(scope="class")
+    def keywords(self):
+        kws = event_selection_keywords()
+        if kws is None:
+            pytest.skip("this release does not expose EventSelectionConfig.keywordSpecs()")
+        return kws
+
+    def test_every_keyword_the_parser_dispatches_has_a_spec(self, keywords):
+        from EventSelectionAlgorithms.EventSelectionConfig import EventSelectionConfig
+        assert set(keywords) == set(EventSelectionConfig()._dispatch)
+
+    def test_specs_are_json_serialisable(self, keywords):
+        assert json.loads(json.dumps(keywords)) == keywords
+
+    def test_every_spec_is_shaped_as_the_gui_expects(self, keywords):
+        arg_types = {"str", "float", "int", "sign", "region", "flag", "container"}
+        for name, spec in keywords.items():
+            assert spec.get("info"), f"{name} has no info string"
+            forms = spec.get("forms") or ([spec["args"]] if "args" in spec else [])
+            assert forms or spec.get("freeText"), f"{name} has neither args nor freeText"
+            for form in forms:
+                for arg in form:
+                    assert arg["name"], f"{name}: unnamed argument"
+                    assert arg["type"] in arg_types, f"{name}.{arg['name']}: {arg['type']}"
+
+    def test_the_cuts_editor_can_offer_at_least_one_keyword(self, keywords):
+        assert [k for k, s in keywords.items() if not s.get("deprecated")]

@@ -30,6 +30,7 @@ jobs:
           ARGS=""
           [ -n "${{ vars.AB_TAG }}" ] && ARGS="${ARGS}AB_TAG=${{ vars.AB_TAG }}\n"
           [ -n "${{ vars.TCT_VERSION }}" ] && ARGS="${ARGS}TCT_VERSION=${{ vars.TCT_VERSION }}\n"
+          [ -n "${{ vars.TCT_REPO }}" ] && ARGS="${ARGS}TCT_REPO=${{ vars.TCT_REPO }}\n"
           echo "args<<EOF" >> $GITHUB_OUTPUT
           printf "$ARGS" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
@@ -42,6 +43,8 @@ jobs:
           platforms: linux/amd64
           tags: registry.cern.ch/itopcptoolkit/itopcptoolkit:latest
           build-args: ${{ steps.buildargs.outputs.args }}
+          # Optional: TopCPToolkit is public, the token is only needed for a
+          # private fork.  An empty secret makes the build clone anonymously.
           secrets: |
             cern_token=${{ secrets.CERN_TOKEN }}
           cache-from: type=registry,ref=registry.cern.ch/itopcptoolkit/itopcptoolkit:buildcache

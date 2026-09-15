@@ -2,8 +2,8 @@
 # ^^^ Required for --mount=type=secret support
 
 # ARG before the first FROM so it is usable in both FROM lines
-ARG AB_TAG=25.2.106
-ARG TCT_VERSION=v3.6.0
+ARG AB_TAG=25.2.110
+ARG TCT_VERSION=v3.7.0
 
 # ── Stage 1: build the React frontend ────────────────────────────────────────
 FROM --platform=$BUILDPLATFORM node:24-slim AS frontend-build
@@ -43,19 +43,22 @@ RUN dnf install -y \
     || echo "WARNING: texlive not installed — PDF generation will be disabled"
 
 # ── Clone and build TopCPToolkit ─────────────────────────────────────────────
-# Pass your CERN GitLab personal access token at build time:
+# TopCPToolkit lives at gitlab.cern.ch/atlas/amg/software/TopCPToolkit and is
+# publicly readable, so no token is needed.  A CERN GitLab personal access
+# token is still accepted (and required for a private fork):
 #   docker build --secret id=cern_token,env=CERN_TOKEN ...
 # The token is injected only for this RUN step and is never written to any layer.
 # TCT_VERSION controls behaviour:
 #   (not set / empty) → skip, no TCT in the image
 #   "latest"          → clone main branch
-#   any other value   → treated as a git tag, e.g. "v3.6.0"
+#   any other value   → treated as a git tag, e.g. "v3.7.0"
 #
 # The source tree is KEPT at /opt/TopCPToolkit/source (only .git is removed):
 # Athena's CMake installs share/ data files and python/ modules into the build
 # tree as symlinks back into the source tree, so deleting the source would
 # leave the reference configs (the GUI's TCT catalogue and templates) and the
 # TopCPToolkit Python modules dangling.
+ARG TCT_REPO=gitlab.cern.ch/atlas/amg/software/TopCPToolkit.git
 ARG TCT_VERSION
 RUN --mount=type=secret,id=cern_token \
     if [ -z "${TCT_VERSION}" ]; then \
@@ -63,9 +66,11 @@ RUN --mount=type=secret,id=cern_token \
         echo "none" > /opt/tct_version.txt ; \
     else \
         CERN_TOKEN=$(cat /run/secrets/cern_token 2>/dev/null || true) ; \
-        if [ -z "$CERN_TOKEN" ]; then \
-            echo "ERROR: TCT_VERSION is set but no cern_token secret was provided." >&2 ; \
-            exit 1 ; \
+        if [ -n "$CERN_TOKEN" ]; then \
+            CLONE_URL="https://oauth2:${CERN_TOKEN}@${TCT_REPO}" ; \
+        else \
+            echo "No cern_token secret provided — cloning ${TCT_REPO} anonymously." ; \
+            CLONE_URL="https://${TCT_REPO}" ; \
         fi ; \
         if [ "${TCT_VERSION}" = "latest" ]; then \
             CLONE_REF="main" ; \
@@ -74,9 +79,9 @@ RUN --mount=type=secret,id=cern_token \
         fi ; \
         echo "Cloning TopCPToolkit ref: ${CLONE_REF}" ; \
         git clone --depth=1 --branch "${CLONE_REF}" \
-            "https://oauth2:${CERN_TOKEN}@gitlab.cern.ch/atlasphys-top/reco/TopCPToolkit.git" \
+            "${CLONE_URL}" \
             /opt/TopCPToolkit/source \
-        && unset CERN_TOKEN \
+        && unset CERN_TOKEN CLONE_URL \
         && rm -rf /opt/TopCPToolkit/source/.git \
         && echo "${TCT_VERSION}" > /opt/tct_version.txt \
         && source /home/atlas/release_setup.sh \

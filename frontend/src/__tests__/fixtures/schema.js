@@ -56,6 +56,11 @@ export const BLOCKS = [
     opt('enableExpertMode', 'bool', false),
     opt('systematicsHistogram', 'str', '', { expertMode: [true] }),
     opt('runSystematics', 'bool', true),
+    // A list option with choices, as CommonServices declares upstream: the
+    // backend splits the (list, cap) tuple into choices + maxChoices.
+    opt('onlySystematicsCategories', 'list', null,
+      { meta: { choices: ['jets', 'JER', 'electrons'], maxChoices: null } }),
+    opt('filterSystematics', 'str', null),
   ], { category: 'Core' }),
 
   block('Jets', [

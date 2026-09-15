@@ -36,6 +36,24 @@ describe('validateConfig', () => {
     expect(issues.every(i => i.severity === 'warning')).toBe(true)
   })
 
+  it('checks a list option against its choices element by element', () => {
+    const issues = validate({ CommonServices: { onlySystematicsCategories: ['jets', 'nope', 'alsoNope'] } })
+    const m = msgs(issues)
+    expect(m).toContain("warning:CommonServices[0].onlySystematicsCategories:'nope' is not one of: jets, JER, electrons")
+    expect(m).toContain("warning:CommonServices[0].onlySystematicsCategories:'alsoNope' is not one of: jets, JER, electrons")
+    expect(m.some(x => x.includes("'jets' is not one of"))).toBe(false)
+  })
+
+  it('accepts every declared choice, and warns past an explicit cap', () => {
+    expect(validate({ CommonServices: { onlySystematicsCategories: ['jets', 'JER', 'electrons'] } })).toEqual([])
+    const capped = JSON.parse(JSON.stringify(SCHEMA))
+    const cs = capped.blocks.find(b => b.name === 'CommonServices')
+    cs.options.find(o => o.name === 'onlySystematicsCategories').meta.maxChoices = 2
+    const obj = { CommonServices: { onlySystematicsCategories: ['jets', 'JER', 'electrons'] } }
+    const issues = validateConfig(obj, effectiveBlocks(capped.blocks, resolveCustomEntriesSync(obj, capped)))
+    expect(msgs(issues)).toContain('warning:CommonServices[0].onlySystematicsCategories:at most 2 values allowed, got 3')
+  })
+
   it('warns about missing required options, but not for inherited ones in sub-blocks', () => {
     const issues = validate({ Jets: { JVT: {} }, Electrons: { containerName: 'E', WorkingPoint: {} } })
     const m = msgs(issues)

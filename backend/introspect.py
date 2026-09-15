@@ -202,6 +202,39 @@ def instantiate(fb) -> List[Any]:
     return list(seq)
 
 
+def normalise_meta(meta: Any) -> Optional[Dict[str, Any]]:
+    """
+    Turn an option's upstream ``meta`` dict into the JSON shape the GUI uses.
+
+    Upstream (``ConfigBlock.addOption``, AB 25.2.110) allows two keys:
+
+    * ``role``    : 'container' | 'containerRef' | 'selection', passed through.
+    * ``choices`` : a ``(list[str], int | None)`` tuple, where the second
+      element caps how many values may be picked (``None`` = no limit; only
+      meaningful for ``list`` options).  It is flattened here into
+      ``choices`` (the list) and ``maxChoices`` (the cap), so the frontend
+      never has to know about the tuple.
+
+    Unknown keys are passed through untouched, so a future upstream key needs
+    no backend change to reach the GUI.
+    """
+    if not isinstance(meta, dict):
+        return None
+    out: Dict[str, Any] = {}
+    for key, value in meta.items():
+        if key != "choices":
+            out[key] = json_safe(value)
+            continue
+        choices, cap = value, None
+        if isinstance(value, (tuple, list)) and len(value) == 2 \
+                and isinstance(value[0], (list, tuple)) \
+                and (value[1] is None or isinstance(value[1], int)):
+            choices, cap = value[0], value[1]
+        out["choices"] = json_safe(choices)
+        out["maxChoices"] = cap
+    return out or None
+
+
 def options_from_block(block) -> List[Dict[str, Any]]:
     """Extract every declared option of one ConfigBlock instance."""
     expert = getattr(block, "_expertModeSettings", None) or {}
@@ -222,7 +255,7 @@ def options_from_block(block) -> List[Dict[str, Any]]:
             "physicalUnit": physical_unit(opt.info or ""),
             "generic": name in GENERIC_OPTIONS,
             "origin": origin,
-            "meta": json_safe(meta) if isinstance(meta, dict) else None,
+            "meta": normalise_meta(meta),
         })
     return result
 
@@ -362,6 +395,30 @@ def _assign_parents(blocks: List[Dict[str, Any]]) -> None:
     for b in blocks:
         for sb in b["subBlocks"]:
             sb["parents"] = list(parents.get(sb["name"], []))
+
+
+def event_selection_keywords() -> Optional[Dict[str, Any]]:
+    """
+    The ``selectionCuts`` keyword grammar, straight from
+    ``EventSelectionConfig.keywordSpecs()`` (AB 25.2.110 and later).  The same
+    table drives Athena's own parser, so the GUI cuts editor cannot drift from
+    it.  None when the release does not expose it.
+    """
+    try:
+        from EventSelectionAlgorithms.EventSelectionConfig import EventSelectionConfig
+    except ImportError:
+        logger.warning("EventSelectionAlgorithms not importable — no keyword spec")
+        return None
+    specs = getattr(EventSelectionConfig, "keywordSpecs", None)
+    if not callable(specs):
+        logger.warning("EventSelectionConfig has no keywordSpecs() — release too old "
+                       "for the typed selection-cuts editor")
+        return None
+    try:
+        return {str(kw): json_safe(spec) for kw, spec in specs().items()}
+    except Exception as exc:  # noqa: BLE001 - never break the schema over this
+        logger.warning("EventSelectionConfig.keywordSpecs() failed: %s", exc)
+        return None
 
 
 def build_schema(factory=None) -> Dict[str, Any]:

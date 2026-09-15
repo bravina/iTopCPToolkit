@@ -29,7 +29,7 @@ jobs:
 
     container:
       # Keep the tag in sync with AB_TAG in the Dockerfile.
-      image: gitlab-registry.cern.ch/atlas/athena/analysisbase:25.2.106
+      image: gitlab-registry.cern.ch/atlas/athena/analysisbase:25.2.110
       # The image's default user is `atlas`; root is needed to write into the
       # runner workspace and to pip-install into the release Python.
       options: --user root

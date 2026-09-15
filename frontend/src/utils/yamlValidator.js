@@ -21,7 +21,7 @@
  */
 
 import { buildSchemaLookup } from './schemaLookup.js'
-import { ADD_CONFIG_BLOCKS, EXPERT_FLAG_HINT, isRequiredOption, optionChoices } from './schema.js'
+import { ADD_CONFIG_BLOCKS, EXPERT_FLAG_HINT, isRequiredOption, optionChoices, optionMaxChoices } from './schema.js'
 import { normalizeAddConfigBlocks, isValidEntry } from './yamlToConfig.js'
 import { isDefault } from './yamlSerializer.js'
 
@@ -148,8 +148,17 @@ function validateValue(key, value, opt, path, issues) {
     issues.push({ path: p, severity: 'warning', message: `Expected ${opt.type}, got ${describe(value)}` })
   }
   const choices = optionChoices(opt)
-  if (choices && !choices.some(c => c === value || String(c) === String(value))) {
-    issues.push({ path: p, severity: 'warning', message: `'${value}' is not one of: ${choices.join(', ')}` })
+  if (choices) {
+    // A list option (e.g. onlySystematicsCategories) is checked element by element.
+    const values = Array.isArray(value) ? value : [value]
+    const unknown = values.filter(v => !choices.some(c => c === v || String(c) === String(v)))
+    for (const v of unknown) {
+      issues.push({ path: p, severity: 'warning', message: `'${v}' is not one of: ${choices.join(', ')}` })
+    }
+    const max = optionMaxChoices(opt)
+    if (max !== null && values.length > max) {
+      issues.push({ path: p, severity: 'warning', message: `at most ${max} value${max === 1 ? '' : 's'} allowed, got ${values.length}` })
+    }
   }
   if (Array.isArray(opt.expertMode) && opt.expertMode.some(r => matchesExpertRule(r, value, opt))) {
     issues.push({ path: p, severity: 'warning', message: `This value requires expert mode (${EXPERT_FLAG_HINT})` })

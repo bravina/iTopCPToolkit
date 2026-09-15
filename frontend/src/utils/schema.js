@@ -71,6 +71,16 @@ export function optionChoices(opt) {
   return Array.isArray(c) && c.length ? c : null
 }
 
+/**
+ * How many of `choices` may be picked at once: upstream ships the cap as the
+ * second element of its `(list, int | None)` tuple, which the backend splits
+ * out as `meta.maxChoices`.  null means no limit.
+ */
+export function optionMaxChoices(opt) {
+  const n = opt?.meta?.maxChoices
+  return Number.isInteger(n) && n > 0 ? n : null
+}
+
 /** Group a block's non-generic options by the ConfigBlock class that declares them. */
 export function optionsByOrigin(block) {
   const groups = []

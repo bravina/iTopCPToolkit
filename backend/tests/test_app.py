@@ -60,6 +60,16 @@ class TestSchema:
                                   "noneAction", "expertMode", "physicalUnit", "generic",
                                   "origin", "meta"}
 
+    def test_keywords_come_from_event_selection_config(self, client):
+        data = client.get("/api/schema").get_json()
+        keywords = data["keywords"]
+        # None only on a release without EventSelectionConfig.keywordSpecs().
+        if keywords is None:
+            pytest.skip("release does not expose EventSelectionConfig.keywordSpecs()")
+        assert "EL_N" in keywords and keywords["EL_N"]["args"]
+        assert keywords["EXPR"]["freeText"] is True
+        assert keywords["SAVE"]["deprecated"] is True
+
     def test_catalogue_and_examples_included(self, client):
         data = client.get("/api/schema").get_json()
         names = [e["algName"] for e in data["catalogue"]]

@@ -7,9 +7,6 @@
 
 import os
 
-import pytest
-from AnalysisTestBlocks.TestBlocksConfig import SUPPORTS_META
-
 import catalogue
 from catalogue import (
     build_catalogue, find_tct_data_dir, harvest_add_config_blocks, iter_config_files,
@@ -56,13 +53,13 @@ def test_build_catalogue_introspects_entries(tct_data_dir):
     assert missing["options"] == []
 
 
-@pytest.mark.skipif(not SUPPORTS_META,
-                    reason="this release's ConfigBlock.addOption has no meta= kwarg yet")
 def test_meta_annotations_reach_the_schema(tct_data_dir):
     tut = {e["algName"]: e for e in build_catalogue(str(tct_data_dir))}["Tutorial"]["block"]
     by_opt = {o["name"]: o for o in tut["options"]}
     assert by_opt["containerName"]["meta"] == {"role": "container"}
-    assert by_opt["workingPoint"]["meta"] == {"choices": ["Loose", "Medium", "Tight"]}
+    # The upstream (list, cap) tuple is split into choices + maxChoices.
+    assert by_opt["workingPoint"]["meta"] == {
+        "choices": ["Loose", "Medium", "Tight"], "maxChoices": 1}
 
 
 def test_build_catalogue_without_tct():

@@ -111,8 +111,7 @@ def build_full_schema():
     if data_dir:
         logger.info("TopCPToolkit data dir %s: %d reference configs, %d AddConfigBlocks entries",
                     data_dir, len(schema["examples"]), len(schema["catalogue"]))
-    # Filled in once EventSelectionConfig exposes its keyword spec upstream
-    schema["keywords"] = None
+    schema["keywords"] = introspect.event_selection_keywords()
     schema["versions"] = _versions()
     return schema
 
