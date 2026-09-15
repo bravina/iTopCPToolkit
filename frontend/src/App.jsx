@@ -347,8 +347,8 @@ export default function App() {
       )}
 
       <div className="app-shell bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 flex flex-col">
-        <header className="h-10 bg-slate-100 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 flex items-center px-4 gap-2 shrink-0 overflow-x-auto">
-          <span className="text-sm font-bold shrink-0">
+        <header className="h-12 bg-slate-100 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 flex items-center px-4 gap-2.5 shrink-0 overflow-x-auto">
+          <span className="text-base font-bold shrink-0">
             <BrandName />
             {versions.app && <span className="text-slate-500 font-normal"> v{versions.app}</span>}
           </span>
@@ -364,12 +364,12 @@ export default function App() {
             : <Badge tone="red" full="✗ No TopCPToolkit built" short="✗ No TCT" />}
 
           <a href={docsUrl} target="_blank" rel="noreferrer"
-            className="text-xs bg-blue-100 dark:bg-blue-800/50 text-blue-700 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-700/50 px-2 py-0.5 rounded transition-colors shrink-0">
+            className="text-sm bg-blue-100 dark:bg-blue-800/50 text-blue-700 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-700/50 px-2.5 py-1 rounded transition-colors shrink-0">
             <span className="hidden sm:inline">📖 TopCPToolkit docs</span>
             <span className="sm:hidden">📖 Docs</span>
           </a>
 
-          {notice && <span className="text-xs text-green-600 dark:text-green-400 shrink-0">{notice}</span>}
+          {notice && <span className="text-sm text-green-600 dark:text-green-400 shrink-0">{notice}</span>}
 
           {mode === 'builder' && (
             <div className="flex items-center gap-1 shrink-0">
@@ -386,7 +386,7 @@ export default function App() {
             <button
               type="button"
               onClick={() => setSearchOpen(true)}
-              className="text-xs px-2 py-0.5 rounded bg-slate-200/50 dark:bg-slate-700/50 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition-colors shrink-0 flex items-center gap-1.5"
+              className="text-sm px-2.5 py-1 rounded bg-slate-200/50 dark:bg-slate-700/50 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition-colors shrink-0 flex items-center gap-1.5"
               title="Search blocks and options (⌘F / Ctrl+F)"
             >
               <span>⌕</span>
@@ -395,13 +395,13 @@ export default function App() {
             </button>
           )}
 
-          <div className="ml-auto flex items-center gap-1 shrink-0">
+          <div className="ml-auto flex items-center gap-1.5 shrink-0">
             {mode && (
               <>
                 <ModeBtn active={mode === 'builder'} color="bg-blue-600" onClick={() => setMode('builder')}>⚙ Builder</ModeBtn>
                 <ModeBtn active={mode === 'reader'} color="bg-emerald-700" onClick={() => setMode('reader')}>◉ Reader</ModeBtn>
                 <ModeBtn active={mode === 'intnote'} color="bg-amber-600" onClick={() => setMode('intnote')}>✍ INTnote</ModeBtn>
-                <span className="w-px h-4 mx-1 bg-slate-200 dark:bg-slate-700" aria-hidden="true" />
+                <span className="w-px h-5 mx-1 bg-slate-300 dark:bg-slate-600" aria-hidden="true" />
               </>
             )}
             <ThemeToggle theme={theme} dark={dark} onCycle={cycleTheme} />
@@ -463,7 +463,7 @@ function Badge({ tone, full, short }) {
     red: 'bg-red-100 dark:bg-red-800/50 text-red-700 dark:text-red-300',
   }[tone]
   return (
-    <span className={`text-xs ${cls} px-2 py-0.5 rounded shrink-0`}>
+    <span className={`text-sm ${cls} px-2.5 py-1 rounded shrink-0`}>
       <span className="hidden sm:inline">{full}</span>
       <span className="sm:hidden">{short}</span>
     </span>
@@ -473,7 +473,7 @@ function Badge({ tone, full, short }) {
 function HeaderBtn({ children, onClick, disabled, active, title }) {
   return (
     <button type="button" onClick={onClick} disabled={disabled} title={title}
-      className={`text-xs px-2 py-0.5 rounded transition-colors disabled:opacity-30 ${
+      className={`text-sm px-2.5 py-1 rounded transition-colors disabled:opacity-30 ${
         active ? 'bg-purple-100 dark:bg-purple-700/60 text-purple-800 dark:text-purple-100' : 'bg-slate-200/50 dark:bg-slate-700/50 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300'}`}>
       {children}
     </button>
@@ -483,8 +483,8 @@ function HeaderBtn({ children, onClick, disabled, active, title }) {
 function ModeBtn({ children, active, color, onClick }) {
   return (
     <button type="button" onClick={onClick}
-      className={`text-xs px-2 py-0.5 rounded transition-colors ${
-        active ? `${color} text-white` : 'text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700'}`}>
+      className={`text-sm font-semibold px-3 py-1 rounded transition-colors ${
+        active ? `${color} text-white shadow-sm` : 'bg-slate-200/60 dark:bg-slate-700/60 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-300 dark:hover:bg-slate-600'}`}>
       {children}
     </button>
   )
