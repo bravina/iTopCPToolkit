@@ -74,7 +74,8 @@ class TestSchema:
     def test_catalogue_and_examples_included(self, client):
         data = client.get("/api/schema").get_json()
         names = [e["algName"] for e in data["catalogue"]]
-        assert names == ["Missing", "Tutorial", "TutorialGroup"]
+        # The fixture's NoSuchModule entry is not in this build, so it is dropped.
+        assert names == ["Tutorial", "TutorialGroup"]
         tut = next(e for e in data["catalogue"] if e["algName"] == "Tutorial")
         assert tut["block"]["error"] is None
         assert tut["usedIn"] == ["TopCPToolkit/a.yaml", "TopCPToolkit/sub/b.yaml"]
