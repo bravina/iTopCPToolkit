@@ -64,7 +64,7 @@ export default function ModeSelector({ onSelect, appVersion, tctVersion, pdflate
       </div>
 
       <p className="text-xs text-slate-400 dark:text-slate-600 text-center max-w-sm">
-        You can switch modes at any time using the header.
+        You can switch modes at any time using the header, or press Esc twice to come back here.
       </p>
     </div>
   )

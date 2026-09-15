@@ -66,7 +66,7 @@ function segmentColour(tx, seg, pal) {
 // ── Timeline ──────────────────────────────────────────────────────────────────
 const PHASES         = [['fly-in', 1800], ['hold', 1500], ['dissolve', 900], ['fade', 450]]
 const REDUCED_PHASES = [['hold', 1500], ['fade', 500]]
-const TAGLINE = 'Interactive configuration builder for TopCPToolkit'
+const TAGLINE = 'Interactive config builder for TopCPToolkit'
 
 // ── Font ──────────────────────────────────────────────────────────────────────
 const FONT_STACK = "'Nunito', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif"

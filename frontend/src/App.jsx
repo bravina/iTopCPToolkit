@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import yaml from 'js-yaml'
 import Sidebar from './components/Sidebar.jsx'
 import BlockPanel from './components/BlockPanel.jsx'
@@ -21,8 +21,10 @@ import { checkDepsFromState } from './utils/dependencyChecker.js'
 import { RegistryProvider } from './contexts/RegistryContext.js'
 import { fetchSchema, introspectEntry, fetchExample } from './api.js'
 import { loadAutosave, saveAutosave, clearAutosave, mergeRestored } from './utils/autosave.js'
+import { escapeAction, ESC_WINDOW_MS, ESC_HINT } from './utils/doubleEscape.js'
 
 const SPLASH_SEEN_KEY = 'itopcptoolkit.splashSeen'
+const MODE_TITLE = 'Switch mode — press Esc twice for the menu'
 
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768)
@@ -143,6 +145,37 @@ export default function App() {
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [mode, undo, redo])
+
+  // ── Esc, Esc: back to the mode selector ────────────────────────────────────
+  const escTimer = useRef(null)
+  useEffect(() => {
+    function handler(e) {
+      const action = escapeAction(e.key, {
+        mode, showSplash, searchOpen,
+        typing: isTypingTarget(document.activeElement),
+        armed: escTimer.current !== null,
+      })
+      if (action === 'ignore') return
+      clearTimeout(escTimer.current)
+      if (action === 'leave') {
+        escTimer.current = null
+        setNotice(null)
+        setMode(null)
+        return
+      }
+      setNotice(ESC_HINT)
+      escTimer.current = setTimeout(() => {
+        escTimer.current = null
+        setNotice(n => (n === ESC_HINT ? null : n))
+      }, ESC_WINDOW_MS)
+    }
+    window.addEventListener('keydown', handler)
+    return () => {
+      window.removeEventListener('keydown', handler)
+      clearTimeout(escTimer.current)
+      escTimer.current = null
+    }
+  }, [mode, showSplash, searchOpen])
 
   // ── Handlers ───────────────────────────────────────────────────────────────
   function handleSearchNavigate({ blockName, optionName }) {
@@ -398,9 +431,9 @@ export default function App() {
           <div className="ml-auto flex items-center gap-1.5 shrink-0">
             {mode && (
               <>
-                <ModeBtn active={mode === 'builder'} color="bg-blue-600" onClick={() => setMode('builder')}>⚙ Builder</ModeBtn>
-                <ModeBtn active={mode === 'reader'} color="bg-emerald-700" onClick={() => setMode('reader')}>◉ Reader</ModeBtn>
-                <ModeBtn active={mode === 'intnote'} color="bg-amber-600" onClick={() => setMode('intnote')}>✍ INTnote</ModeBtn>
+                <ModeBtn active={mode === 'builder'} color="bg-blue-600" onClick={() => setMode('builder')} title={MODE_TITLE}>⚙ Builder</ModeBtn>
+                <ModeBtn active={mode === 'reader'} color="bg-emerald-700" onClick={() => setMode('reader')} title={MODE_TITLE}>◉ Reader</ModeBtn>
+                <ModeBtn active={mode === 'intnote'} color="bg-amber-600" onClick={() => setMode('intnote')} title={MODE_TITLE}>✍ INTnote</ModeBtn>
                 <span className="w-px h-5 mx-1 bg-slate-300 dark:bg-slate-600" aria-hidden="true" />
               </>
             )}
@@ -480,9 +513,9 @@ function HeaderBtn({ children, onClick, disabled, active, title }) {
   )
 }
 
-function ModeBtn({ children, active, color, onClick }) {
+function ModeBtn({ children, active, color, onClick, title }) {
   return (
-    <button type="button" onClick={onClick}
+    <button type="button" onClick={onClick} title={title}
       className={`text-sm font-semibold px-3 py-1 rounded transition-colors ${
         active ? `${color} text-white shadow-sm` : 'bg-slate-200/60 dark:bg-slate-700/60 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-300 dark:hover:bg-slate-600'}`}>
       {children}
