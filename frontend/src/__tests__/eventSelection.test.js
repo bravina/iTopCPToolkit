@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import {
   stripDeprecated, splitCutLines, joinCutLines, parseCutLine, serializeCutLine,
-  defaultArgs, keywordNames, specForms,
+  defaultArgs, keywordNames, specForms, newDraft, draftFromParsed, withForm,
+  draftToLine, missingArgs,
 } from '../utils/eventSelection.js'
 import { KEYWORDS, PARSED, REJECTED } from './fixtures/keywordSpecs.js'
 
@@ -136,5 +137,125 @@ describe('serializeCutLine and defaultArgs', () => {
       const line = serializeCutLine(kw, defaultArgs(kw, KEYWORDS), KEYWORDS)
       expect(parseCutLine(line, KEYWORDS).keyword).toBe(kw)
     }
+  })
+})
+
+
+describe('drafts (a row being edited)', () => {
+  // Regression: adding a keyword used to hand the user a bare text box.  The
+  // row was re-derived from its text, and an empty argument serialises to
+  // nothing, so a fresh EL_N became "EL_N  >=" — which parses as one argument,
+  // matches no form, and falls back to raw text with no idea what to type.
+  it('a fresh keyword is structured even though its line is not parsable', () => {
+    for (const kw of keywordNames(KEYWORDS)) {
+      const draft = newDraft(kw, KEYWORDS)
+      expect(draft, kw).not.toBeNull()
+      expect(draft.keyword, kw).toBe(kw)
+      expect(draft.args, kw).toEqual(defaultArgs(kw, KEYWORDS))
+      // the draft survives whether or not its own text parses back
+      expect(draft.form === null || Array.isArray(draft.form), kw).toBe(true)
+    }
+  })
+
+  it('keeps the arguments a half-finished line cannot carry', () => {
+    const draft = newDraft('EL_N', KEYWORDS)
+    expect(draftToLine(draft, KEYWORDS)).toBe('EL_N >=')          // lossy on purpose
+    expect(parseCutLine(draftToLine(draft, KEYWORDS), KEYWORDS).args).toBeNull()
+    // …but the draft still knows every argument, which is what gets rendered
+    expect(Object.keys(draft.args)).toEqual(['sel', 'ptmin', 'sign', 'count'])
+    expect(missingArgs(draft.form, draft.args)).toEqual(['ptmin', 'count'])
+  })
+
+  it('fills in as the user types, and is complete when nothing is missing', () => {
+    let draft = newDraft('EL_N', KEYWORDS)
+    draft = { ...draft, args: { ...draft.args, ptmin: '25000' } }
+    expect(missingArgs(draft.form, draft.args)).toEqual(['count'])
+    draft = { ...draft, args: { ...draft.args, count: '1' } }
+    expect(missingArgs(draft.form, draft.args)).toEqual([])
+    const line = draftToLine(draft, KEYWORDS)
+    expect(line).toBe('EL_N 25000 >= 1')
+    expect(parseCutLine(line, KEYWORDS).args).toEqual(draft.args)
+  })
+
+  it('values never move between fields while typing', () => {
+    // Filling `count` before `ptmin` used to re-parse ">=" into ptmin.
+    let draft = newDraft('EL_N', KEYWORDS)
+    draft = { ...draft, args: { ...draft.args, count: '2' } }
+    expect(draft.args.ptmin).toBe('')
+    expect(draft.args.sign).toBe('>=')
+    expect(draft.args.count).toBe('2')
+  })
+
+  it('an optional argument left empty is not missing', () => {
+    const draft = newDraft('GLOBALTRIGMATCH', KEYWORDS)
+    expect(missingArgs(draft.form, draft.args)).toEqual([])
+    expect(draftToLine(draft, KEYWORDS)).toBe('GLOBALTRIGMATCH')
+  })
+
+  it('flags and signs are never missing', () => {
+    expect(missingArgs(specForms(KEYWORDS.OS)[0], newDraft('OS', KEYWORDS).args)).toEqual([])
+    const mllw = newDraft('MLLWINDOW', KEYWORDS)
+    expect(missingArgs(mllw.form, mllw.args)).toEqual(['lowMLL', 'highMLL'])   // not `veto`
+  })
+
+  it('free-text keywords draft their text', () => {
+    const draft = newDraft('EXPR', KEYWORDS)
+    expect(draft.form).toBeNull()
+    expect(draft.args).toEqual({ text: '' })
+    expect(draftToLine({ ...draft, args: { text: 'dR(el[0],jet[0]) > 0.4' } }, KEYWORDS))
+      .toBe('EXPR dR(el[0],jet[0]) > 0.4')
+  })
+
+  it('an existing line keeps its values when it becomes a draft', () => {
+    const parsed = parseCutLine('JET_N_BTAG tight GN2v01:FixedCutBEff_77 >= 2', KEYWORDS)
+    const draft = draftFromParsed(parsed)
+    expect(draft.keyword).toBe('JET_N_BTAG')
+    expect(draft.args).toEqual(parsed.args)
+    expect(draftToLine(draft, KEYWORDS)).toBe('JET_N_BTAG tight GN2v01:FixedCutBEff_77 >= 2')
+  })
+
+  it('a line that does not parse yields no draft, so it stays raw text', () => {
+    expect(draftFromParsed(parseCutLine('EL_N 1', KEYWORDS))).toBeNull()
+    expect(draftFromParsed(parseCutLine('BOGUS', KEYWORDS))).toBeNull()
+    expect(draftFromParsed(parseCutLine('# comment', KEYWORDS))).toBeNull()
+  })
+
+  it('switching form keeps the values whose names survive', () => {
+    const forms = specForms(KEYWORDS.SUM_EL_N_MU_N)
+    let draft = newDraft('SUM_EL_N_MU_N', KEYWORDS)
+    draft = { ...draft, args: { ...draft.args, ptmin: '25000', sign: '>', count: '2' } }
+
+    const two = withForm(draft, forms[1], KEYWORDS)
+    expect(Object.keys(two.args)).toEqual(['ptEl', 'ptMu', 'sign', 'count'])
+    expect(two.args.sign).toBe('>')        // kept
+    expect(two.args.count).toBe('2')       // kept
+    expect(two.args.ptEl).toBe('')         // new argument, blank
+    expect(missingArgs(two.form, two.args)).toEqual(['ptEl', 'ptMu'])
+
+    const back = withForm(two, forms[0], KEYWORDS)
+    expect(Object.keys(back.args)).toEqual(['ptmin', 'sign', 'count'])
+    expect(back.args.count).toBe('2')
+  })
+
+  it('every form of every keyword can be drafted and serialised', () => {
+    for (const kw of keywordNames(KEYWORDS)) {
+      if (KEYWORDS[kw].freeText) {
+        // free text has no argument form at all
+        expect(newDraft(kw, KEYWORDS).form, kw).toBeNull()
+        continue
+      }
+      for (const form of specForms(KEYWORDS[kw])) {
+        const draft = newDraft(kw, KEYWORDS, form)
+        expect(draft.form, kw).toBe(form)
+        expect(draftToLine(draft, KEYWORDS).split(/\s+/)[0], kw).toBe(kw)
+      }
+    }
+  })
+
+  it('newDraft refuses an unknown keyword', () => {
+    expect(newDraft('NOPE', KEYWORDS)).toBeNull()
+    expect(draftToLine(null, KEYWORDS)).toBe('')
+    expect(withForm(null, [], KEYWORDS)).toBeNull()
+    expect(missingArgs(null, null)).toEqual([])
   })
 })

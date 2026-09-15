@@ -128,6 +128,47 @@ describe('optionRole', () => {
   })
 })
 
+describe('regions (EventSelection.selectionName)', () => {
+  // Upstream has no 'region' role yet; until it does, EventSelection's
+  // selectionName is recognised by block + option name so IMPORT can offer a
+  // picker.  Everything else keeps its declared role.
+  it('is a region only on EventSelection', () => {
+    const selectionName = opt('selectionName', 'str', '')
+    expect(optionRole(selectionName, { blockName: 'EventSelection' })).toBe('region')
+    expect(optionRole(selectionName, { blockName: 'PtEtaSelection' })).toBeNull()
+    expect(optionRole(selectionName)).toBeNull()
+  })
+
+  it('yields to a role declared upstream', () => {
+    const declared = opt('selectionName', 'str', '', { meta: { role: 'selection' } })
+    expect(optionRole(declared, { blockName: 'EventSelection' })).toBe('selection')
+  })
+
+  it('collects every region defined in the config, de-duplicated and in order', () => {
+    const yaml = {
+      EventSelection: [
+        { selectionName: 'SR', selectionCuts: 'EL_N 25000 >= 1' },
+        { selectionName: 'CR', selectionCuts: 'IMPORT SR' },
+        { selectionName: 'SR', selectionCuts: 'OS' },
+      ],
+    }
+    expect(buildRegistryFromYaml(yaml, SCHEMA.blocks).regions).toEqual(['SR', 'CR'])
+    const config = yamlToConfigSync(yaml, SCHEMA)
+    expect(buildRegistryFromState(config, SCHEMA.blocks).regions).toEqual(['SR', 'CR'])
+  })
+
+  it('is empty, not undefined, when no region is defined', () => {
+    expect(buildRegistryFromYaml({ Jets: [{ containerName: 'AnaJets' }] }, SCHEMA.blocks).regions).toEqual([])
+  })
+
+  it('does not make regions look like containers or selections', () => {
+    const yaml = { EventSelection: { selectionName: 'SR', selectionCuts: 'OS' } }
+    const reg = buildRegistryFromYaml(yaml, SCHEMA.blocks)
+    expect(reg.collections.map(c => c.name)).not.toContain('SR')
+    expect(reg.withSelections.join()).not.toMatch(/SR/)
+  })
+})
+
 describe('registry with declared roles', () => {
   const fromYaml = buildRegistryFromYaml(YAML, ROLED)
 

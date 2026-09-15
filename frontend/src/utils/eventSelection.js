@@ -156,10 +156,67 @@ export function serializeCutLine(keyword, args, keywords, form = null) {
       if (v === true || (typeof v === 'string' && v.toLowerCase() === a.name.toLowerCase())) tokens.push(a.name)
       continue
     }
-    if (a.optional && (v === '' || v === null || v === undefined)) continue
-    tokens.push(v === null || v === undefined ? '' : String(v))
+    if (v === '' || v === null || v === undefined) continue
+    tokens.push(String(v))
   }
+  // A required argument with no value yet simply is not written: the text
+  // cannot express "empty", which is exactly why a row being edited keeps a
+  // draft (see below) rather than being re-read from its own text.
   return tokens.join(' ').trim()
+}
+
+// ── Drafts ───────────────────────────────────────────────────────────────────
+//
+// A cut line cannot express "this argument exists but is still empty": an empty
+// value serialises to nothing, so `EL_N` with nothing filled in would come back
+// as the unparsable `EL_N  >=`.  While a row is being edited the editor
+// therefore keeps a DRAFT — { keyword, form, args } — and derives the text from
+// it, instead of re-parsing the text on every keystroke.  The text stays what
+// is written to the YAML, and the parser stays as strict as Athena's.
+
+/** A fresh draft for a keyword, with every argument at its default. */
+export function newDraft(keyword, keywords, form = null) {
+  const spec = keywordSpec(keywords, keyword)
+  if (!spec) return null
+  const chosen = spec.freeText ? null : (form || specForms(spec)[0])
+  return { keyword, form: chosen, args: defaultArgs(keyword, keywords, chosen) }
+}
+
+/** The draft an already-parsed line corresponds to, or null if it did not parse. */
+export function draftFromParsed(parsed) {
+  if (!parsed?.spec || !parsed.args) return null
+  return { keyword: parsed.keyword, form: parsed.form, args: parsed.args }
+}
+
+/** Move a draft onto another of its keyword's forms, keeping values by name. */
+export function withForm(draft, form, keywords) {
+  if (!draft) return null
+  const fresh = defaultArgs(draft.keyword, keywords, form)
+  const args = Object.fromEntries(Object.entries(fresh).map(([name, value]) => [
+    name,
+    Object.prototype.hasOwnProperty.call(draft.args || {}, name) ? draft.args[name] : value,
+  ]))
+  return { ...draft, form, args }
+}
+
+/** The line a draft writes. */
+export function draftToLine(draft, keywords) {
+  return draft ? serializeCutLine(draft.keyword, draft.args, keywords, draft.form) : ''
+}
+
+/**
+ * Required arguments still waiting for a value — what keeps a row incomplete.
+ * Flags are never missing (absent means false) and neither are signs, which
+ * default to '>='.
+ */
+export function missingArgs(form, args) {
+  return (form || [])
+    .filter(a => !a.optional && a.type !== 'flag')
+    .filter(a => {
+      const v = args?.[a.name]
+      return v === '' || v === null || v === undefined
+    })
+    .map(a => a.name)
 }
 
 /** Default argument values for a keyword (for a freshly added cut). */

@@ -89,18 +89,44 @@ There are three sources, mirroring how a TopCPToolkit YAML file works:
    installed with the TCT build (`<build>/x86_64*/data/TopCPToolkit/configs/**`)
    and introspects them into a *catalogue*. The Builder offers the catalogue
    with one-click "add"; `AddConfigBlocks` is written to the YAML only for
-   blocks actually used. Coverage therefore follows the reference configs —
-   a TCT block appears in the GUI once some shipped config declares it.
-   Since TCT v3.7.0 the only configs shipped in `share/configs` are the CI ones
-   (`CI_test_01`); the analysis examples moved to the ATLAS-internal
+   blocks actually used. Coverage therefore follows the configs that are in the
+   image — a TCT block appears in the GUI once some config declares it.
+
+   Two trees are scanned (see *Example configs* below): the configs shipped
+   with the TopCPToolkit build, and the
    [TopCPToolkit_Examples](https://gitlab.cern.ch/atlas/amg/software/topcptoolkit_examples)
-   repository, so the harvested catalogue is correspondingly smaller. Blocks
-   outside it are still reachable through "Add custom block…" below.
+   checkout. The latter matters since TCT v3.7.0, which ships only its CI
+   configs: most custom blocks (KLFitter, HyPER, VyPER, NeutrinoWeighter, …)
+   are declared only in the examples repository now. Blocks declared nowhere
+   are still reachable through "Add custom block…" below.
 
 3. **Anything else** — the Builder's "Add custom block…" form and the Reader
    both call `POST /api/introspect` for entries not in the catalogue (any
    module installed in the image can be imported, the same trust level as
    running the YAML).
+
+### Example configs
+
+"Start from template…" offers the `reco.yaml` / `particle.yaml` / `parton.yaml`
+of every config directory found in
+
+| Source | Where | Notes |
+|---|---|---|
+| `TopCPToolkit` | `<build>/x86_64*/data/TopCPToolkit/configs/**` | since v3.7.0 just the CI configs |
+| `Examples` | `/opt/TopCPToolkit_Examples/Analysis/<group>/<config>/` | ATLAS-internal, needs `CERN_TOKEN` at build time |
+
+Before an example is offered it is put through two steps:
+
+1. **`include:` resolution.** Fragments are merged in with Athena's own
+   `combineConfigFiles`, so precedence matches what `runTop_el.py` would do
+   (local keys win; for a list of fragments the earlier one wins). What the GUI
+   loads therefore never contains an `include:`.
+2. **A staleness check.** The resolved config is run through
+   `TextConfig.configure()` — the same code that would configure the job. If it
+   references a block or an option this release does not have, or a fragment is
+   missing, the example is dropped *silently*: these are other people's configs,
+   archived against an older release, and there is nothing the user can do
+   about it. The reasons are logged at DEBUG.
 
 Sidebar categories are the only hand-maintained piece: `CATEGORIES` in
 `backend/introspect.py` maps block names to a category; everything else lands
@@ -165,10 +191,12 @@ To release a new version, update `VERSION` and push to `main`.
 |---|---|---|
 | `CERN_REGISTRY_USER` | Secret | Harbor registry username |
 | `CERN_REGISTRY_TOKEN` | Secret | Harbor CLI secret (from registry.cern.ch → User Profile) |
-| `CERN_TOKEN` | Secret | CERN GitLab PAT — optional, only for a private TopCPToolkit fork |
+| `CERN_TOKEN` | Secret | CERN GitLab PAT — needed for the (ATLAS-internal) example configs, and for a private TopCPToolkit fork |
 | `AB_TAG` | Variable | AnalysisBase tag (e.g. `25.2.110`), optional |
 | `TCT_VERSION` | Variable | TopCPToolkit version (e.g. `v3.7.0`), optional |
 | `TCT_REPO` | Variable | TopCPToolkit repository, optional (default `gitlab.cern.ch/atlas/amg/software/TopCPToolkit.git`) |
+| `TCT_EXAMPLES_REPO` | Variable | TopCPToolkit_Examples repository, optional |
+| `TCT_EXAMPLES_REF` | Variable | Branch/tag of TopCPToolkit_Examples, optional (default `main`) |
 
 ### One-time OKD setup
 

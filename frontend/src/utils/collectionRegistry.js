@@ -16,6 +16,7 @@
  *     collections:    [{ name, type, blockName }],
  *     selections:     [{ name, container, type }],
  *     byType:         { jets: [...], electrons: [...], ... },
+ *     regions:        ["SR", "CR_ttbar", ...],   // EventSelection selectionNames
  *     withSelections: ["AnaJets.baselineJvt", ...]
  *   }
  */
@@ -62,12 +63,19 @@ export function inferFieldType(name) {
  *    warning, never raise a false one.  Delete it once the object blocks carry
  *    `meta={'role':'container'}` upstream (see .claude/UPSTREAM_MRS.txt).
  *
+ * One more temporary bridge, for a role upstream does not have yet:
+ * EventSelection's `selectionName` defines a REGION, which is what the IMPORT
+ * keyword's `region` argument refers to.  Until upstream can express that
+ * (`meta={'role':'region'}`, agreed as a follow-up), it is recognised here by
+ * block and option name so the cuts editor can offer a region picker.
+ *
  * There is deliberately no other name-based fallback — an option the upstream
  * block does not annotate gets no role, and is treated as an ordinary value.
  */
-export function optionRole(opt, { isSub = false } = {}) {
+export function optionRole(opt, { isSub = false, blockName = null } = {}) {
   const declared = opt?.meta?.role
   if (typeof declared === 'string' && declared) return declared
+  if (blockName === 'EventSelection' && opt?.name === 'selectionName') return 'region'
   if (isSub && opt?.name === 'containerName') return 'inherited'
   if (!isSub && opt?.name === 'containerName') return 'container'   // temporary bridge, see above
   return null
@@ -89,6 +97,7 @@ function valueOrDefault(options, opt) {
 function buildRegistry(walked) {
   const collections = []
   const selections = []
+  const regions = []
   const addCollection = (name, type, blockName) => {
     if (typeof name !== 'string' || !name) return
     if (!collections.some(c => c.name === name)) collections.push({ name, type: type ?? 'any', blockName })
@@ -98,15 +107,20 @@ function buildRegistry(walked) {
     const c = container.split('.')[0]
     if (!selections.some(s => s.name === name && s.container === c)) selections.push({ name, container: c, type: type ?? 'any' })
   }
+  const addRegion = (name) => {
+    if (typeof name !== 'string' || !name) return
+    if (!regions.includes(name)) regions.push(name)
+  }
 
   for (const { def, instances } of walked) {
     const objType = inferFieldType(def.name)
-    const roles = (def.options || []).map(o => [o, optionRole(o)])
+    const roles = (def.options || []).map(o => [o, optionRole(o, { blockName: def.name })])
     const containerOpt = (def.options || []).find(o => o.name === 'containerName')
 
     for (const { options, subs } of instances) {
       for (const [opt, role] of roles) {
         if (role === 'container') addCollection(valueOrDefault(options, opt), objType, def.name)
+        else if (role === 'region') addRegion(valueOrDefault(options, opt))
       }
       const container = containerOpt ? valueOrDefault(options, containerOpt) : null
       for (const [opt, role] of roles) {
@@ -127,10 +141,15 @@ function buildRegistry(walked) {
   for (const c of collections) {
     if (c.type && c.type !== 'any') (byType[c.type] ??= []).push(c)
   }
-  return { collections, selections, byType, withSelections: selections.map(s => `${s.container}.${s.name}`) }
+  return {
+    collections, selections, byType, regions,
+    withSelections: selections.map(s => `${s.container}.${s.name}`),
+  }
 }
 
-export const EMPTY_REGISTRY = Object.freeze({ collections: [], selections: [], byType: {}, withSelections: [] })
+export const EMPTY_REGISTRY = Object.freeze({
+  collections: [], selections: [], byType: {}, regions: [], withSelections: [],
+})
 
 /** Registry from the builder state; `blocks` is the effective block list. */
 export function buildRegistryFromState(config, blocks) {

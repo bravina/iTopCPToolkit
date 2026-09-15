@@ -94,6 +94,30 @@ RUN --mount=type=secret,id=cern_token \
         && echo "Reference configs: $(find /opt/TopCPToolkit/build/*/data/TopCPToolkit/configs -name '*.yaml' | wc -l) files" ; \
     fi
 
+# ── Clone TopCPToolkit_Examples (analysis example configs) ───────────────
+# Since TCT v3.7.0 the toolkit ships only its CI configs; the analysis examples
+# live in TopCPToolkit_Examples, which is ATLAS-internal.  A cern_token secret
+# is therefore REQUIRED to get them — without one the step is skipped and the
+# app simply offers fewer templates and a smaller custom-block catalogue.
+# Only Analysis/ is used (reco/particle/parton of each config, plus the
+# fragments they `include`).
+ARG TCT_EXAMPLES_REPO=gitlab.cern.ch/atlas/amg/software/topcptoolkit_examples.git
+ARG TCT_EXAMPLES_REF=main
+RUN --mount=type=secret,id=cern_token \
+    CERN_TOKEN=$(cat /run/secrets/cern_token 2>/dev/null || true) ; \
+    if [ -z "$CERN_TOKEN" ]; then \
+        echo "No cern_token secret — skipping TopCPToolkit_Examples (it is ATLAS-internal)." ; \
+    elif git clone --depth=1 --branch "${TCT_EXAMPLES_REF}" \
+            "https://oauth2:${CERN_TOKEN}@${TCT_EXAMPLES_REPO}" \
+            /opt/TopCPToolkit_Examples ; then \
+        rm -rf /opt/TopCPToolkit_Examples/.git ; \
+        echo "Analysis configs: $(find /opt/TopCPToolkit_Examples/Analysis \
+              -name 'reco.yaml' | wc -l) directories" ; \
+    else \
+        echo "WARNING: could not clone ${TCT_EXAMPLES_REPO} — no analysis examples." >&2 ; \
+        rm -rf /opt/TopCPToolkit_Examples ; \
+    fi
+
 # Copy backend
 COPY backend/ /app/backend/
 COPY VERSION /app/VERSION

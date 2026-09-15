@@ -6,6 +6,18 @@ import { categorize, superBlockList, TCT_CATEGORY } from '../utils/schema.js'
  * TopCPToolkit catalogue (custom blocks declared via AddConfigBlocks), a
  * manual "add custom block" form, templates and unknown-block housekeeping.
  */
+/** Examples grouped by the source they came from, in the order given. */
+function groupExamples(examples) {
+  const groups = []
+  for (const ex of examples) {
+    const source = ex.source || 'Examples'
+    let g = groups.find(x => x.source === source)
+    if (!g) { g = { source, items: [] }; groups.push(g) }
+    g.items.push(ex)
+  }
+  return groups
+}
+
 export default function Sidebar({
   blocks, categories, config, selected, onSelect, onToggle, onAddInstance, docsUrl, depIssues,
   catalogue = [], onAddCatalogueEntry, onAddCustomEntry, onRemoveCustom, onRemoveUnknown,
@@ -40,10 +52,14 @@ export default function Sidebar({
               value=""
               onChange={e => { if (e.target.value) onLoadExample(e.target.value) }}
               className="flex-1 min-w-0 text-xs bg-slate-200/60 dark:bg-slate-700/60 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded px-1 py-0.5 focus:outline-none"
-              title="Start from a TopCPToolkit reference config"
+              title="Start from an example config shipped with TopCPToolkit or TopCPToolkit_Examples"
             >
               <option value="">Start from template…</option>
-              {examples.map(ex => <option key={ex.path} value={ex.path}>{ex.name}</option>)}
+              {groupExamples(examples).map(({ source, items }) => (
+                <optgroup key={source} label={source}>
+                  {items.map(ex => <option key={ex.path} value={ex.path}>{ex.name}</option>)}
+                </optgroup>
+              ))}
             </select>
           )}
         </div>

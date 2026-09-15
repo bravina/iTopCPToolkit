@@ -1,6 +1,8 @@
 import { createContext, useContext } from 'react'
 
-const RegistryContext = createContext({ collections: [], selections: [], byType: {}, withSelections: [] })
+const RegistryContext = createContext({
+  collections: [], selections: [], byType: {}, regions: [], withSelections: [],
+})
 
 export const RegistryProvider = RegistryContext.Provider
 

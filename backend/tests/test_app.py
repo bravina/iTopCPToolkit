@@ -1,9 +1,10 @@
 # backend/tests/test_app.py
 #
 # Flask routes.  The schema comes from the real Athena factory; the catalogue
-# and examples come from the tct_data_dir fixture, whose AddConfigBlocks
-# entries point at the AnalysisTestBlocks package (a stand-in for a user's own
-# analysis package).  Only response shapes are asserted, never Athena block lists.
+# and examples come from the tct_data_dir and examples_dir fixtures, whose
+# AddConfigBlocks entries point at the AnalysisTestBlocks package (a stand-in
+# for a user's own analysis package).  Only response shapes are asserted, never
+# Athena block lists.
 
 import json
 
@@ -14,7 +15,7 @@ import introspect
 
 
 @pytest.fixture
-def flask_app(tct_data_dir, monkeypatch):
+def flask_app(tct_data_dir, examples_dir, monkeypatch):
     monkeypatch.setattr(catalogue, "find_tct_data_dir", lambda: str(tct_data_dir))
     import app as flask_app
     flask_app.app.config["TESTING"] = True
@@ -76,8 +77,14 @@ class TestSchema:
         assert names == ["Missing", "Tutorial", "TutorialGroup"]
         tut = next(e for e in data["catalogue"] if e["algName"] == "Tutorial")
         assert tut["block"]["error"] is None
-        assert tut["usedIn"] == ["a.yaml", "sub/b.yaml"]
-        assert [e["path"] for e in data["examples"]] == ["a.yaml", "broken.yaml", "sub/b.yaml"]
+        assert tut["usedIn"] == ["TopCPToolkit/a.yaml", "TopCPToolkit/sub/b.yaml"]
+        # Only configs that resolve and still configure are offered; the stale
+        # and unresolvable ones in examples_dir are dropped without a trace.
+        assert [e["path"] for e in data["examples"]] == [
+            "TopCPToolkit/CI_test_00/reco.yaml",
+            "Examples/GRP/Good_example1/particle.yaml",
+            "Examples/GRP/Good_example1/reco.yaml",
+        ]
         assert "content" not in data["examples"][0]
 
     def test_etag_roundtrip(self, client):
@@ -124,18 +131,26 @@ class TestIntrospect:
 class TestExamples:
 
     def test_list(self, client):
-        assert [e["path"] for e in client.get("/api/examples").get_json()] == \
-            ["a.yaml", "broken.yaml", "sub/b.yaml"]
+        listed = client.get("/api/examples").get_json()
+        assert [e["path"] for e in listed] == [
+            "TopCPToolkit/CI_test_00/reco.yaml",
+            "Examples/GRP/Good_example1/particle.yaml",
+            "Examples/GRP/Good_example1/reco.yaml",
+        ]
+        assert [e["source"] for e in listed] == ["TopCPToolkit", "Examples", "Examples"]
 
-    def test_content(self, client):
-        r = client.get("/api/examples/sub/b.yaml")
+    def test_content_has_its_includes_resolved(self, client):
+        r = client.get("/api/examples/Examples/GRP/Good_example1/reco.yaml")
         assert r.status_code == 200
         assert "yaml" in r.content_type
-        assert "tutorialOption: 5" in r.get_data(as_text=True)
+        text = r.get_data(as_text=True)
+        assert "include" not in text
+        assert "systematics" in text          # pulled in from the fragment
 
     def test_unknown_and_traversal(self, client):
-        assert client.get("/api/examples/nope.yaml").status_code == 404
-        assert client.get("/api/examples/../notes.txt").status_code == 404
+        assert client.get("/api/examples/Examples/GRP/nope/reco.yaml").status_code == 404
+        assert client.get("/api/examples/TopCPToolkit/../notes.txt").status_code == 404
+        assert client.get("/api/examples/Examples/GRP/Good_example1/fragment.yaml").status_code == 404
 
 
 class TestWithoutAthena:

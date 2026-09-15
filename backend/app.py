@@ -6,8 +6,8 @@ Endpoints
 GET  /api/schema              Introspected block tree (+ TCT catalogue, examples)
 GET  /api/health              Liveness check; reports Athena + version info
 POST /api/introspect          Introspect one hand-entered AddConfigBlocks entry
-GET  /api/examples            List the TopCPToolkit reference configs
-GET  /api/examples/<path>     Content of one reference config
+GET  /api/examples            List the usable example configs
+GET  /api/examples/<path>     Content of one example, `include:` already resolved
 POST /api/generate-intnote    Runs generateConfigInformation.py on a JSON file,
                               compiles the resulting .tex to PDF, returns both
 
@@ -108,9 +108,11 @@ def build_full_schema():
     schema["catalogue"] = catalogue.build_catalogue(data_dir)
     schema["examples"] = catalogue.list_examples(data_dir)
     schema["tctDataDir"] = data_dir
-    if data_dir:
-        logger.info("TopCPToolkit data dir %s: %d reference configs, %d AddConfigBlocks entries",
-                    data_dir, len(schema["examples"]), len(schema["catalogue"]))
+    schema["examplesDir"] = catalogue.find_examples_dir()
+    logger.info("Examples: %d usable (%s); catalogue: %d AddConfigBlocks entries",
+                len(schema["examples"]),
+                ", ".join(s.name for s in catalogue.example_sources(data_dir)) or "no source",
+                len(schema["catalogue"]))
     schema["keywords"] = introspect.event_selection_keywords()
     schema["versions"] = _versions()
     return schema
@@ -204,7 +206,8 @@ def introspect_entry():
 
 @app.route("/api/examples")
 def examples():
-    return jsonify([{"path": e["path"], "name": e["name"]} for e in get_schema()["examples"]])
+    return jsonify([{"path": e["path"], "name": e["name"], "source": e.get("source")}
+                    for e in get_schema()["examples"]])
 
 
 @app.route("/api/examples/<path:rel_path>")

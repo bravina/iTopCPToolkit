@@ -72,4 +72,59 @@ def tct_data_dir(tmp_path):
         """))
     (configs / "broken.yaml").write_text("AddConfigBlocks: [\n  - :::\n")
     (configs / "notes.txt").write_text("not a config\n")
+    # A config directory shaped the way TopCPToolkit ships them: only the three
+    # level files are examples, the fragment next to them is not.
+    ci = configs / "CI_test_00"
+    ci.mkdir()
+    (ci / "reco.yaml").write_text(textwrap.dedent("""
+        CommonServices:
+          runSystematics: false
+        """))
+    (ci / "fragment.yaml").write_text("CommonServices:\n  systematicsHistogram: 'h'\n")
     return tmp_path
+
+
+@pytest.fixture
+def examples_dir(tmp_path, monkeypatch):
+    """
+    A stand-in TopCPToolkit_Examples checkout:
+    ``Analysis/<group>/<config>/{reco,particle,parton}.yaml``.
+
+    Four configs, covering what the collector has to tell apart: one that
+    resolves an `include` and configures, one stale through an unknown block,
+    one stale through an option no block uses, and one whose fragment is gone.
+    """
+    root = tmp_path / "TopCPToolkit_Examples"
+    grp = root / "Analysis" / "GRP"
+
+    good = grp / "Good_example1"
+    good.mkdir(parents=True)
+    # The fragment sets both options; the local value of runSystematics wins.
+    (good / "reco.yaml").write_text(textwrap.dedent("""
+        include:
+          - Good_example1/fragment.yaml
+        CommonServices:
+          runSystematics: false
+        """))
+    (good / "fragment.yaml").write_text(textwrap.dedent("""
+        CommonServices:
+          runSystematics: true
+          systematicsHistogram: 'systematics'
+        """))
+    (good / "particle.yaml").write_text("# a comment worth keeping\nCommonServices:\n  runSystematics: false\n")
+    (good / "version.txt").write_text("v3.7.0\n")
+
+    stale_block = grp / "StaleBlock_example1"
+    stale_block.mkdir(parents=True)
+    (stale_block / "reco.yaml").write_text("NoSuchBlockHere:\n  someOption: 1\n")
+
+    stale_option = grp / "StaleOption_example1"
+    stale_option.mkdir(parents=True)
+    (stale_option / "reco.yaml").write_text("CommonServices:\n  noSuchOptionHere: 1\n")
+
+    broken = grp / "BrokenInclude_example1"
+    broken.mkdir(parents=True)
+    (broken / "reco.yaml").write_text("include:\n  - BrokenInclude_example1/gone.yaml\n")
+
+    monkeypatch.setenv("TCT_EXAMPLES_DIR", str(root))
+    return root

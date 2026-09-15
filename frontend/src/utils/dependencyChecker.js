@@ -43,13 +43,13 @@ function checkWalked(walked, registry) {
   for (const { def, instances } of walked) {
     for (const { idx, options, subs } of instances) {
       for (const opt of def.options || []) {
-        if (optionRole(opt) !== 'containerRef') continue
+        if (optionRole(opt, { blockName: def.name }) !== 'containerRef') continue
         const issue = checkValue(options[opt.name], `${def.name}[${idx}].${opt.name}`, registry)
         if (issue) issues.push(issue)
       }
       for (const { def: sd, idx: sidx, options: so } of subs) {
         for (const opt of sd.options || []) {
-          if (optionRole(opt, { isSub: true }) !== 'containerRef') continue
+          if (optionRole(opt, { isSub: true, blockName: sd.name }) !== 'containerRef') continue
           const issue = checkValue(so[opt.name], `${def.name}[${idx}].${sd.name}[${sidx}].${opt.name}`, registry)
           if (issue) issues.push(issue)
         }
