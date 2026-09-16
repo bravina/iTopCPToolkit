@@ -6,9 +6,23 @@ the heading here.  Releases before 1.0.1 are on the
 
 ## 1.0.7 — unreleased
 
-- No user-facing changes.  (This changelog, covering 1.0.1 onward; and a backend
+- An option that names a selection now offers the names already defined on the
+  same container, matching what the CP algorithms do: a new name creates the
+  selection, an existing one overwrites it with the new selection item.  Both
+  are valid, so a name nothing else references is still never flagged.
+- An option that names an event filter — a *region*, in the sense the `IMPORT`
+  keyword uses — now offers the regions the config's `EventSelection` blocks
+  define.  Picking one writes the decoration the algorithms actually read,
+  `pass_<region>_%SYS%,as_char`, rather than the bare name.  The field stays
+  free text and is never flagged, because combinations such as
+  `pass_SR_%SYS%,as_char || !pass_CR_%SYS%,as_char` are valid.  Only
+  `EventSelection`'s `selectionName` creates a region, so an option that merely
+  runs on one no longer adds its own value to the list — including
+  `EventSelection`'s own `preselection`, which starts a selection from the flag
+  another one produced.
+- Also in this release: this changelog, covering 1.0.1 onward, and a backend
   test fix — an assertion still expected the catalogue to list a block whose
-  module is not in the build.)
+  module is not in the build.
 
 ## 1.0.6 — 2026-09-15
 
