@@ -16,6 +16,8 @@ export default function OptionList({
   inherited = {}, keywords,
 }) {
   const all = blockDef.options || []
+  // Scopes the suggestions for a 'selection' option to this instance's container.
+  const container = values.containerName ?? inherited.containerName ?? null
   const visible = opt => showExpert || !isExpertOption(opt) || isSet(values[opt.name])
   const hiddenExpert = all.filter(o => !isGenericOption(o) && isExpertOption(o) && !visible(o)).length
   const generic = all.filter(o => isGenericOption(o) && visible(o))
@@ -35,6 +37,7 @@ export default function OptionList({
       blockName={blockName}
       depIssue={depIssues.find(i => i.path.endsWith(`.${opt.name}`))?.message}
       keywords={keywords}
+      container={container}
     />
   )
 

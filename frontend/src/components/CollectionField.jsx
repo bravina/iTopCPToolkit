@@ -1,18 +1,24 @@
 import { useState, useRef, useEffect } from 'react'
 import { useRegistry } from '../contexts/RegistryContext.js'
-import { inferFieldType } from '../utils/collectionRegistry.js'
+import { inferFieldType, selectionsFor, regionSelectionExpr } from '../utils/collectionRegistry.js'
 
 /**
- * A text input that shows a dropdown of matching container/selection names
- * from the current registry, filtered to the expected physics object type.
+ * A text input that shows a dropdown of matching names from the current
+ * registry, filtered to the expected physics object type.
  *
  * Props:
- *   optName         – option name (used to infer expected type)
+ *   optName     – option name (used to infer expected type)
  *   value, onChange
  *   placeholder
- *   allowSelections – whether to show container.selection pairs (default true)
+ *   mode        – 'collections+selections' (a reference: containers and
+ *                 container.selection pairs), 'selections' (a name that
+ *                 creates or reuses a selection on `container`) or 'regions'
+ *                 (an event filter naming a region EventSelection defines)
+ *   container   – the block instance's container, scoping 'selections'
  */
-export default function CollectionField({ optName, value, onChange, placeholder }) {
+export default function CollectionField({
+  optName, value, onChange, placeholder, mode = 'collections+selections', container,
+}) {
   const registry = useRegistry()
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState(value ?? '')
@@ -25,34 +31,52 @@ export default function CollectionField({ optName, value, onChange, placeholder 
 
   const expectedType = inferFieldType(optName)
 
-  // Build candidate list: containers first, then container.selection pairs
+  // Build candidate list
   const allSuggestions = []
 
-  // Filter collections by expected type
-  const containers = expectedType
-    ? (registry.byType[expectedType] ?? [])
-    : registry.collections
+  if (mode === 'regions') {
+    // Only EventSelection defines regions, so the list is exactly what it
+    // defined.  Picking one inserts the decoration the algorithms read; the
+    // field stays free text, since `||`, `&&` and `!` combinations are valid.
+    for (const name of registry.regions ?? []) {
+      allSuggestions.push({ value: regionSelectionExpr(name), label: name, hint: 'region', kind: 'region' })
+    }
+  } else if (mode === 'selections') {
+    // Reusing an existing name overwrites that selection; a new one creates it,
+    // so the list is a shortcut, never the set of allowed values.
+    for (const name of selectionsFor(registry, container)) {
+      allSuggestions.push({ value: name, label: name, hint: 'reuse', kind: 'selection' })
+    }
+  } else {
+    // Filter collections by expected type
+    const containers = expectedType
+      ? (registry.byType[expectedType] ?? [])
+      : registry.collections
 
-  for (const c of containers) {
-    allSuggestions.push({ value: c.name, label: c.name, hint: c.type, kind: 'container' })
-  }
+    for (const c of containers) {
+      allSuggestions.push({ value: c.name, label: c.name, hint: c.type, kind: 'container' })
+    }
 
-  // Container.selection pairs, filtered by type
-  for (const s of registry.selections) {
-    if (expectedType && s.type !== expectedType) continue
-    allSuggestions.push({
-      value: `${s.container}.${s.name}`,
-      label: `${s.container}.${s.name}`,
-      hint: s.type,
-      kind: 'selection',
-    })
+    // Container.selection pairs, filtered by type
+    for (const s of registry.selections) {
+      if (expectedType && s.type !== expectedType) continue
+      allSuggestions.push({
+        value: `${s.container}.${s.name}`,
+        label: `${s.container}.${s.name}`,
+        hint: s.type,
+        kind: 'selection',
+      })
+    }
   }
 
   // Filter by query
   const q = query.trim().toLowerCase()
   const filtered = q === ''
     ? allSuggestions
-    : allSuggestions.filter(s => s.value.toLowerCase().includes(q))
+    : allSuggestions.filter(s => {
+        const label = s.label.toLowerCase()
+        return s.value.toLowerCase().includes(q) || label.includes(q) || q.includes(label)
+      })
 
   function commit(val) {
     setQuery(val)
@@ -94,8 +118,12 @@ export default function CollectionField({ optName, value, onChange, placeholder 
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
-  const kindColor = { container: 'text-blue-600 dark:text-blue-400', selection: 'text-purple-600 dark:text-purple-400' }
-  const kindIcon  = { container: '○', selection: '◉' }
+  const kindColor = {
+    container: 'text-blue-600 dark:text-blue-400',
+    selection: 'text-purple-600 dark:text-purple-400',
+    region: 'text-emerald-600 dark:text-emerald-400',
+  }
+  const kindIcon  = { container: '○', selection: '◉', region: '▣' }
 
   return (
     <div className="relative w-full">
@@ -103,7 +131,8 @@ export default function CollectionField({ optName, value, onChange, placeholder 
         ref={inputRef}
         type="text"
         value={query}
-        placeholder={placeholder ?? (expectedType ? `${expectedType} container…` : 'container…')}
+        placeholder={placeholder ?? (mode === 'regions' ? 'event filter…'
+          : expectedType ? `${expectedType} container…` : 'container…')}
         onChange={handleInput}
         onFocus={() => setOpen(true)}
         onKeyDown={handleKeyDown}

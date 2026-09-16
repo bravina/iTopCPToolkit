@@ -46,8 +46,15 @@ export function inferFieldType(name) {
 
 /**
  * Role of an option: 'container' (defines a container name), 'containerRef'
- * (reads `container[.selection]`), 'selection' (defines a selection name), or
- * null.  A declared upstream `meta.role` always wins.
+ * (reads `container[.selection]`), 'selection' (names a selection on the
+ * block's own container), or null.  A declared upstream `meta.role` always
+ * wins.
+ *
+ * A 'selection' option both defines and reuses: the CP algorithms create the
+ * decoration when the name is new and overwrite it with the new selection item
+ * when it already exists.  So a name that appears nowhere else is not an
+ * error — nothing may reference a selection for it to be valid — and an
+ * existing name is a deliberate choice the editor should make easy to pick.
  *
  * Two name-based fallbacks apply to `containerName` only, and only when the
  * option is NOT annotated upstream:
@@ -69,6 +76,14 @@ export function inferFieldType(name) {
  * (`meta={'role':'region'}`, agreed as a follow-up), it is recognised here by
  * block and option name so the cuts editor can offer a region picker.
  *
+ * Every OTHER 'region' option is a reference, never a definition: only
+ * EventSelection's `selectionName` creates a region.  That includes
+ * EventSelection's own `preselection`, which starts a selection from the flag
+ * another one produced.  What a referencing option holds is not the bare name
+ * but the selection decoration the algorithms read,
+ * `pass_<region>_%SYS%,as_char` — the same string EventSelection's own IMPORT
+ * keyword builds.  See regionSelectionExpr().
+ *
  * There is deliberately no other name-based fallback — an option the upstream
  * block does not annotate gets no role, and is treated as an ordinary value.
  */
@@ -81,9 +96,49 @@ export function optionRole(opt, { isSub = false, blockName = null } = {}) {
   return null
 }
 
-/** Autocomplete mode for an option: 'collections+selections' or null. */
+/**
+ * Whether a 'region' option DEFINES the region rather than referencing one.
+ * Only EventSelection's `selectionName` does; the block's own `preselection`
+ * references, so the block name alone is not enough to tell them apart.
+ */
+export function definesRegion(opt, { blockName = null } = {}) {
+  return blockName === 'EventSelection' && opt?.name === 'selectionName'
+}
+
+/**
+ * The value a region-consuming option holds: the event filter decoration the
+ * CP algorithms read, not the bare region name.  Values are free text and may
+ * combine several of these with `||`, `&&` and `!`, so this only builds the
+ * single-region form the picker inserts.
+ */
+export function regionSelectionExpr(region) {
+  return `pass_${region}_%SYS%,as_char`
+}
+
+/**
+ * Autocomplete mode for an option: 'collections+selections' for a reference,
+ * 'selections' for a name that may create or reuse one, 'regions' for an event
+ * filter naming a region defined elsewhere, or null.
+ */
 export function getAutocompleteMode(opt, ctx) {
-  return optionRole(opt, ctx) === 'containerRef' ? 'collections+selections' : null
+  const role = optionRole(opt, ctx)
+  if (role === 'containerRef') return 'collections+selections'
+  if (role === 'selection') return 'selections'
+  if (role === 'region' && !definesRegion(opt, ctx)) return 'regions'
+  return null
+}
+
+/**
+ * Selection names already defined on `container`, for the reuse half of a
+ * 'selection' option.  Every known name when the container is unknown: an
+ * unscoped suggestion is still better than none, and the value is free text.
+ */
+export function selectionsFor(registry, container) {
+  const c = typeof container === 'string' ? container.split('.')[0] : null
+  const names = (registry?.selections ?? [])
+    .filter(s => !c || s.container === c)
+    .map(s => s.name)
+  return [...new Set(names)]
 }
 
 // ── Registry construction ─────────────────────────────────────────────────────
@@ -120,7 +175,7 @@ function buildRegistry(walked) {
     for (const { options, subs } of instances) {
       for (const [opt, role] of roles) {
         if (role === 'container') addCollection(valueOrDefault(options, opt), objType, def.name)
-        else if (role === 'region') addRegion(valueOrDefault(options, opt))
+        else if (role === 'region' && definesRegion(opt, { blockName: def.name })) addRegion(valueOrDefault(options, opt))
       }
       const container = containerOpt ? valueOrDefault(options, containerOpt) : null
       for (const [opt, role] of roles) {

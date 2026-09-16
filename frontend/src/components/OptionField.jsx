@@ -180,15 +180,17 @@ function JsonField({ value, onChange, expect }) {
   )
 }
 
-function StringField({ opt, value, onChange, blockDef, isSub, placeholder, keywords }) {
+function StringField({ opt, value, onChange, blockDef, isSub, placeholder, keywords, container }) {
   // AB 25.2.110 allows only 'choices' and 'role' in meta, so there is no
   // upstream marker for "this string holds several lines".  selectionCuts is
   // the one such option and has an editor of its own.
   if (opt.name === 'selectionCuts') {
     return <SelectionCutsEditor value={value ?? ''} onChange={onChange} keywords={keywords} />
   }
-  if (getAutocompleteMode(opt, { isSub, blockDef })) {
-    return <CollectionField optName={opt.name} value={value ?? ''} onChange={onChange} placeholder={placeholder} />
+  const mode = getAutocompleteMode(opt, { isSub, blockName: blockDef?.name })
+  if (mode) {
+    return <CollectionField optName={opt.name} value={value ?? ''} onChange={onChange}
+      placeholder={placeholder} mode={mode} container={container} />
   }
   return <input type="text" value={value ?? ''} onChange={e => onChange(e.target.value)} className={INPUT} placeholder={placeholder} />
 }
@@ -201,6 +203,7 @@ function StringField({ opt, value, onChange, blockDef, isSub, placeholder, keywo
  */
 export default function OptionField({
   option: opt, value, onChange, blockName, blockDef, isSub = false, inheritedValue, depIssue, keywords,
+  container,
 }) {
   const placeholder = placeholderFor(opt, inheritedValue)
   const choices = optionChoices(opt)
@@ -212,7 +215,7 @@ export default function OptionField({
     if (opt.type === 'int' || opt.type === 'float') return <NumberField opt={opt} value={value} onChange={onChange} placeholder={placeholder} />
     if (opt.type === 'list') return <ListField value={value} onChange={onChange} placeholder={placeholder} />
     if (opt.type === 'dict') return <JsonField value={value} onChange={onChange} expect="object" />
-    return <StringField opt={opt} value={value} onChange={onChange} blockDef={blockDef} isSub={isSub} placeholder={placeholder} keywords={keywords} />
+    return <StringField opt={opt} value={value} onChange={onChange} blockDef={blockDef} isSub={isSub} placeholder={placeholder} keywords={keywords} container={container} />
   }
 
   return (

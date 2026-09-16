@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   buildRegistryFromState, buildRegistryFromYaml, inferFieldType, optionRole, getAutocompleteMode,
+  selectionsFor, regionSelectionExpr,
 } from '../utils/collectionRegistry.js'
 import { checkDepsFromState, checkDepsFromYaml, looksLikeContainerRef } from '../utils/dependencyChecker.js'
 import { yamlToConfigSync } from '../utils/yamlToConfig.js'
@@ -126,6 +127,63 @@ describe('optionRole', () => {
     expect(getAutocompleteMode(opt('electronID', 'str', ''))).toBeNull()
     expect(getAutocompleteMode(opt('minPt', 'float', 0))).toBeNull()
   })
+
+  it('offers the existing names for a selection, which may create or reuse', () => {
+    expect(getAutocompleteMode(opt('selectionName', 'str', '', { meta: { role: 'selection' } })))
+      .toBe('selections')
+  })
+})
+
+describe('selections create or reuse', () => {
+  const registry = buildRegistryFromYaml(YAML, ROLED)
+
+  it('suggests only the names defined on the same container', () => {
+    expect(selectionsFor(registry, 'AnaElectrons').sort()).toEqual(['loose', 'pt50', 'tight'])
+    // 'jvt' is the JVT sub-block's default selectionName, defined on AnaJets too.
+    expect(selectionsFor(registry, 'AnaJets').sort()).toEqual(['jvt', 'tight'])
+  })
+
+  it('accepts a container.selection value, scoping on the container half', () => {
+    expect(selectionsFor(registry, 'AnaJets.tight').sort()).toEqual(['jvt', 'tight'])
+  })
+
+  it('falls back to every known name when the container is unknown', () => {
+    expect(selectionsFor(registry, null).sort()).toEqual(['jvt', 'loose', 'pt50', 'tight'])
+  })
+
+  it('de-duplicates a name reused across containers', () => {
+    // 'tight' is defined on both AnaJets and AnaElectrons.
+    expect(selectionsFor(registry, null).filter(n => n === 'tight')).toHaveLength(1)
+  })
+
+  it('is empty, not undefined, for a container with no selections', () => {
+    expect(selectionsFor(registry, 'NoSuchContainer')).toEqual([])
+    expect(selectionsFor(undefined, 'AnaJets')).toEqual([])
+  })
+
+  it('registers a reused name once, on the container it belongs to', () => {
+    const reused = {
+      ...YAML,
+      // A second block writing the same selection on the same container:
+      // upstream overwrites the decoration rather than defining a new one.
+      PtEtaSelection: [
+        { containerName: 'AnaElectrons', selectionName: 'pt50', minPt: 50000 },
+        { containerName: 'AnaElectrons', selectionName: 'pt50', minPt: 80000 },
+      ],
+    }
+    const r = buildRegistryFromYaml(reused, ROLED)
+    expect(r.selections.filter(s => s.name === 'pt50' && s.container === 'AnaElectrons')).toHaveLength(1)
+  })
+
+  it('never reports a brand-new selection name as an undefined reference', () => {
+    const fresh = {
+      ...YAML,
+      PtEtaSelection: { containerName: 'AnaElectrons', selectionName: 'nobodyReferencesThis', minPt: 1 },
+    }
+    const r = buildRegistryFromYaml(fresh, ROLED)
+    const issues = checkDepsFromYaml(fresh, r, ROLED)
+    expect(issues.filter(i => i.message.includes('nobodyReferencesThis'))).toEqual([])
+  })
 })
 
 describe('regions (EventSelection.selectionName)', () => {
@@ -166,6 +224,63 @@ describe('regions (EventSelection.selectionName)', () => {
     const reg = buildRegistryFromYaml(yaml, SCHEMA.blocks)
     expect(reg.collections.map(c => c.name)).not.toContain('SR')
     expect(reg.withSelections.join()).not.toMatch(/SR/)
+  })
+})
+
+describe('regions consumed outside EventSelection', () => {
+  // A block that RUNS on a region (DiTauMass.eventSelection upstream) declares
+  // role 'region' too.  Only EventSelection defines them, so such an option is
+  // a reference: it offers the defined names and holds the decoration.
+  const consumer = opt('eventSelection', 'str', '', { meta: { role: 'region' } })
+
+  it('offers the defined regions, and does not define one itself', () => {
+    expect(getAutocompleteMode(consumer, { blockName: 'DiTauMass' })).toBe('regions')
+    // EventSelection's own selectionName creates the region, so it gets no picker
+    expect(getAutocompleteMode(opt('selectionName', 'str', ''), { blockName: 'EventSelection' })).toBeNull()
+  })
+
+  it('offers them on EventSelection.preselection too, which references one', () => {
+    // selectionName defines, preselection references — same block, so the block
+    // name alone cannot tell them apart
+    const preselection = opt('preselection', 'str', '', { meta: { role: 'region' } })
+    expect(getAutocompleteMode(preselection, { blockName: 'EventSelection' })).toBe('regions')
+
+    const blocks = [block('EventSelection', [
+      opt('selectionName', 'str', '', { meta: { role: 'region' } }),
+      preselection,
+      opt('selectionCuts', 'str', ''),
+    ], { category: 'Selection' })]
+    const yaml = {
+      EventSelection: [
+        { selectionName: 'SR', selectionCuts: 'OS' },
+        { selectionName: 'CR', preselection: regionSelectionExpr('SR'), selectionCuts: 'OS' },
+      ],
+    }
+    // only the two selectionNames are regions; the preselection value is not
+    expect(buildRegistryFromYaml(yaml, blocks).regions).toEqual(['SR', 'CR'])
+  })
+
+  it('is not registered as a region', () => {
+    const blocks = [...SCHEMA.blocks, block('DiTauMass', [consumer], { category: 'Analysis' })]
+    const yaml = {
+      EventSelection: [{ selectionName: 'SR', selectionCuts: 'OS' }],
+      DiTauMass: [{ eventSelection: regionSelectionExpr('SR') }],
+    }
+    expect(buildRegistryFromYaml(yaml, blocks).regions).toEqual(['SR'])
+  })
+
+  it('builds the event filter decoration the algorithms read', () => {
+    expect(regionSelectionExpr('SR')).toBe('pass_SR_%SYS%,as_char')
+  })
+
+  it('leaves the value unchecked, so combinations are not flagged', () => {
+    const blocks = [...SCHEMA.blocks, block('DiTauMass', [consumer], { category: 'Analysis' })]
+    const yaml = {
+      EventSelection: [{ selectionName: 'SR', selectionCuts: 'OS' }],
+      DiTauMass: [{ eventSelection: 'pass_SR_%SYS%,as_char || !pass_CR_%SYS%,as_char' }],
+    }
+    const reg = buildRegistryFromYaml(yaml, blocks)
+    expect(checkDepsFromYaml(yaml, reg, blocks)).toEqual([])
   })
 })
 
