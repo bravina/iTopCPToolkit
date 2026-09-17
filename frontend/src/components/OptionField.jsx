@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import InfoPopover from './InfoPopover.jsx'
+import { optionLocator } from '../ai/explain.js'
 import CollectionField from './CollectionField.jsx'
 import SelectionCutsEditor from './SelectionCutsEditor.jsx'
 import { getAutocompleteMode } from '../utils/collectionRegistry.js'
@@ -233,7 +234,9 @@ export default function OptionField({
         {inheritedValue !== undefined && (
           <span className="text-xs text-slate-500 shrink-0" title="Propagated from the parent block unless set here">↳ inherited</span>
         )}
-        {opt.info && <InfoPopover info={opt.info} />}
+        <InfoPopover info={opt.info} explain={optionLocator({
+          blockName, optionName: opt.name, subName: isSub ? blockDef?.name : null, value,
+        })} />
         {opt.default !== null && opt.default !== undefined && opt.default !== '' && (
           <span className="text-xs text-slate-400 dark:text-slate-700 ml-auto shrink-0 font-mono truncate max-w-[120px]"
             title={`Default: ${formatValue(opt.default)}${opt.factoryDefault !== null && opt.factoryDefault !== undefined ? ' (set by the factory)' : ''}`}>

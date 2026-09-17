@@ -52,6 +52,34 @@ describe('useConfig reducer', () => {
     expect(reduce(h, { type: 'UNDO' })).toBe(h)
   })
 
+  it('an AI proposal applies as one undoable step, on top of the history it finds', () => {
+    let h = run(init, { type: 'TOGGLE_BLOCK', name: 'Electrons' })   // work the user did first
+    const pastBefore = h.past
+    const before = h.present
+    const jets = h.present.blocks.Jets.instances[0]._id
+    h = reduce(h, { type: 'APPLY_OPS', actions: [
+      { type: 'SET_BLOCK_ENABLED', name: 'Jets', enabled: true },
+      { type: 'SET_OPTION', blockName: 'Jets', instanceId: jets, key: 'containerName', value: 'AnaJets' },
+      { type: 'SET_OPTION', blockName: 'Jets', instanceId: jets, key: 'jetCollection', value: 'AntiKt4EMPFlowJets' },
+    ] })
+    expect(h.present.blocks.Jets.enabled).toBe(true)
+    expect(h.present.blocks.Jets.instances[0].options)
+      .toEqual({ containerName: 'AnaJets', jetCollection: 'AntiKt4EMPFlowJets' })
+    expect(h.past).toHaveLength(pastBefore.length + 1)   // three edits, one entry
+
+    h = reduce(h, { type: 'UNDO' })
+    expect(h.present).toBe(before)                       // exactly the pre-proposal state
+    expect(h.past).toEqual(pastBefore)                   // and the user's own history survives
+    expect(h.past).toHaveLength(1)
+    expect(reduce(h, { type: 'REDO' }).present.blocks.Jets.enabled).toBe(true)
+  })
+
+  it('a proposal that changes nothing leaves the history alone', () => {
+    const h = run(init, { type: 'TOGGLE_BLOCK', name: 'Jets' })
+    expect(reduce(h, { type: 'APPLY_OPS', actions: [{ type: 'TOGGLE_BLOCK', name: 'Nope' }] })).toBe(h)
+    expect(reduce(h, { type: 'APPLY_OPS', actions: [] })).toBe(h)
+  })
+
   it('no-op actions do not create history entries', () => {
     const h = run(init)
     expect(reduce(h, { type: 'TOGGLE_BLOCK', name: 'Nope' })).toBe(h)

@@ -11,6 +11,9 @@ import ConfigReader from './components/ConfigReader.jsx'
 import IntNoteWriter from './components/IntNoteWriter.jsx'
 import SearchOverlay from './components/SearchOverlay.jsx'
 import ThemeToggle from './components/ThemeToggle.jsx'
+import AiChatPanel from './components/AiChatPanel.jsx'
+import AiSettingsModal from './components/AiSettingsModal.jsx'
+import { aiEnabled, explainStatus, loadConnection, loadPrefs, savePrefs, saveKey, clearKey } from './ai/settings.js'
 import { useConfig } from './hooks/useConfig.js'
 import { useTheme } from './hooks/useTheme.js'
 import { toYamlString } from './utils/yamlSerializer.js'
@@ -19,11 +22,15 @@ import { blocksForConfig, customEntryFromCatalogue, superBlockList } from './uti
 import { buildRegistryFromState } from './utils/collectionRegistry.js'
 import { checkDepsFromState } from './utils/dependencyChecker.js'
 import { RegistryProvider } from './contexts/RegistryContext.js'
+import { ExplainProvider, useExplainRequests } from './contexts/ExplainContext.js'
 import { fetchSchema, introspectEntry, fetchExample } from './api.js'
 import { loadAutosave, saveAutosave, clearAutosave, mergeRestored } from './utils/autosave.js'
 import { escapeAction, ESC_WINDOW_MS, ESC_HINT } from './utils/doubleEscape.js'
 
 const SPLASH_SEEN_KEY = 'itopcptoolkit.splashSeen'
+// Decided once per page load: the build flag, plus — in a gated build — whether
+// this browser has been unlocked at /withai (see ai/settings.js).
+const AI_AVAILABLE = aiEnabled()
 const MODE_TITLE = 'Switch mode — press Esc twice for the menu'
 
 function useIsMobile() {
@@ -69,11 +76,17 @@ export default function App() {
   const [notice, setNotice] = useState(null)
   const [searchOpen, setSearchOpen] = useState(false)
   const [showExpert, setShowExpert] = useState(false)
+  // AI assistant: absent altogether unless the build enables it (see ai/settings.js)
+  const [aiConnection, setAiConnection] = useState(() => (AI_AVAILABLE ? loadConnection() : null))
+  const [aiSettingsOpen, setAiSettingsOpen] = useState(false)
+  const [aiPanelOpen, setAiPanelOpen] = useState(true)
+  // Held here, not in the splitter, so the split survives hiding the panel.
+  const [previewSplit, setPreviewSplit] = useState([55, 45])
   const isMobile = useIsMobile()
   const { theme, dark, cycleTheme } = useTheme()
 
   const {
-    config, init, load,
+    config, init, load, applyOps,
     toggleBlock, setBlockEnabled, setOption, addInstance, removeInstance,
     toggleSubBlock, setSubOption, addSubInstance, removeSubInstance,
     addCustomBlock, removeCustomBlock, removeUnknownBlock,
@@ -81,6 +94,18 @@ export default function App() {
   } = useConfig()
 
   const flash = useCallback((msg) => setNotice(msg), [])
+
+  // "Explain this" in Builder: the click opens the assistant panel and the
+  // panel resolves the locator.  Reader runs its own, around its own panel.
+  const aiStatus = explainStatus(AI_AVAILABLE, aiConnection)
+  const openAiSettings = useCallback(() => setAiSettingsOpen(true), [])
+  const onAsk = useCallback(() => {
+    setAiPanelOpen(true)
+    // On mobile the panel lives behind a tab, so say where the answer went.
+    if (isMobile) flash('Asked the assistant — the answer is in the YAML tab')
+  }, [flash, isMobile])
+  const { value: explainValue, request: explainRequest, clear: clearExplain } =
+    useExplainRequests({ status: aiStatus, onConnect: openAiSettings, onAsk })
 
   // ── Boot: schema + autosave restore ────────────────────────────────────────
   useEffect(() => {
@@ -150,6 +175,7 @@ export default function App() {
   const escTimer = useRef(null)
   useEffect(() => {
     function handler(e) {
+      if (e.key === 'Escape' && aiSettingsOpen) { setAiSettingsOpen(false); return }
       const action = escapeAction(e.key, {
         mode, showSplash, searchOpen,
         typing: isTypingTarget(document.activeElement),
@@ -175,9 +201,43 @@ export default function App() {
       clearTimeout(escTimer.current)
       escTimer.current = null
     }
-  }, [mode, showSplash, searchOpen])
+  }, [mode, showSplash, searchOpen, aiSettingsOpen])
 
   // ── Handlers ───────────────────────────────────────────────────────────────
+  function handleAiConnect({ provider, model, apiKey }) {
+    saveKey(provider, apiKey)                       // sessionStorage; never POSTed anywhere
+    savePrefs({ ...loadPrefs(), provider, model })
+    setAiConnection({ provider, model, apiKey })
+    setAiSettingsOpen(false)
+    setAiPanelOpen(true)
+  }
+
+  function handleAiDisconnect() {
+    if (aiConnection) clearKey(aiConnection.provider)
+    setAiConnection(null)
+    setAiSettingsOpen(false)
+  }
+
+  /**
+   * The only place an AI proposal reaches the config, and only from the
+   * user's Apply.  Targeted edits go through APPLY_OPS — one undo entry for
+   * the whole set, history intact.  A whole config is a file load, so it
+   * resets history exactly as opening a file does; the review card says so
+   * before the user commits to it.
+   */
+  function handleApplyProposal(proposal) {
+    if (proposal.kind === 'config') {
+      load(proposal.state)
+      const first = Object.keys(proposal.configObj).find(k => proposal.state.blocks[k])
+      if (first) setSelected(first)
+      flash('Applied the assistant\'s configuration — it replaced your config and cleared the undo history')
+      return
+    }
+    applyOps(proposal.actions)
+    const n = proposal.actions.length
+    flash(`Applied ${n} change${n === 1 ? '' : 's'} from the assistant — ⌘Z undoes them`)
+  }
+
   function handleSearchNavigate({ blockName, optionName }) {
     if (mode !== 'builder') return
     setSelected(blockName)
@@ -355,9 +415,31 @@ export default function App() {
     </main>
   )
 
-  const previewPanel = (
+  const showAiPanel = AI_AVAILABLE && aiConnection && aiPanelOpen
+  const yamlPreview = (
     <YamlPreview config={config} schema={schema} onExport={handleExport}
       selected={selected} onSelectBlock={setSelected} />
+  )
+  const previewPanel = showAiPanel ? (
+    <ResizablePanels direction="vertical" minSize={20}
+      sizes={previewSplit} onSizesChange={setPreviewSplit}>
+      {yamlPreview}
+      <AiChatPanel
+        connection={aiConnection}
+        schema={schema}
+        config={config}
+        blocks={blocks}
+        registry={registry}
+        mode={mode}
+        explainRequest={explainRequest}
+        onExplainHandled={clearExplain}
+        onApplyProposal={handleApplyProposal}
+        onOpenSettings={openAiSettings}
+        onClose={() => setAiPanelOpen(false)}
+      />
+    </ResizablePanels>
+  ) : (
+    <div className="h-full overflow-hidden">{yamlPreview}</div>
   )
 
   return (
@@ -368,6 +450,15 @@ export default function App() {
           mode={mode}
           onNavigate={handleSearchNavigate}
           onClose={() => setSearchOpen(false)}
+        />
+      )}
+
+      {AI_AVAILABLE && aiSettingsOpen && (
+        <AiSettingsModal
+          connection={aiConnection}
+          onConnect={handleAiConnect}
+          onDisconnect={handleAiDisconnect}
+          onClose={() => setAiSettingsOpen(false)}
         />
       )}
 
@@ -428,6 +519,15 @@ export default function App() {
             </button>
           )}
 
+          {mode === 'builder' && (
+            <AiHeaderButton
+              available={AI_AVAILABLE}
+              connection={aiConnection}
+              open={aiPanelOpen}
+              onClick={() => (aiConnection ? setAiPanelOpen(o => !o) : setAiSettingsOpen(true))}
+            />
+          )}
+
           <div className="ml-auto flex items-center gap-1.5 shrink-0">
             {mode && (
               <>
@@ -448,17 +548,19 @@ export default function App() {
         )}
 
         {mode === 'builder' && (
-          <div className="flex flex-1 min-h-0 overflow-hidden">
-            {isMobile ? (
-              <MobileLayout sidebar={sidebarPanel} editor={editorPanel} preview={previewPanel} />
-            ) : (
-              <ResizablePanels initialSizes={[20, 50, 30]}>
-                {sidebarPanel}
-                {editorPanel}
-                {previewPanel}
-              </ResizablePanels>
-            )}
-          </div>
+          <ExplainProvider value={explainValue}>
+            <div className="flex flex-1 min-h-0 overflow-hidden">
+              {isMobile ? (
+                <MobileLayout sidebar={sidebarPanel} editor={editorPanel} preview={previewPanel} />
+              ) : (
+                <ResizablePanels initialSizes={[20, 50, 30]}>
+                  {sidebarPanel}
+                  {editorPanel}
+                  {previewPanel}
+                </ResizablePanels>
+              )}
+            </div>
+          </ExplainProvider>
         )}
 
         {mode === 'reader' && (
@@ -467,6 +569,10 @@ export default function App() {
               schema={schema}
               onOpenInBuilder={handleOpenInBuilder}
               onOpenSearch={() => setSearchOpen(true)}
+              aiAvailable={AI_AVAILABLE}
+              aiConnection={aiConnection}
+              onOpenAiSettings={openAiSettings}
+              isMobile={isMobile}
             />
           </div>
         )}
@@ -500,6 +606,21 @@ function Badge({ tone, full, short }) {
       <span className="hidden sm:inline">{full}</span>
       <span className="sm:hidden">{short}</span>
     </span>
+  )
+}
+
+/** The Builder's one AI control — absent, not disabled, when there is no assistant. */
+export function AiHeaderButton({ available, connection, open, onClick }) {
+  if (!available) return null
+  return (
+    <HeaderBtn
+      onClick={onClick}
+      active={!!connection && open}
+      title={connection
+        ? 'Show or hide the AI assistant'
+        : 'Connect an AI assistant with your own API key'}>
+      🤖 <span className="hidden md:inline">{connection ? 'Assistant' : 'Connect AI'}</span>
+    </HeaderBtn>
   )
 }
 

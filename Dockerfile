@@ -11,7 +11,17 @@ WORKDIR /app/frontend
 COPY frontend/package*.json ./
 RUN npm install
 COPY frontend/ ./
-RUN npm run build
+# Vite bakes VITE_* in at build time, so whether the image serves the AI
+# assistant is decided here.  Three values:
+#   0 (default) — no AI UI at all
+#   gated       — unlocked per browser at /withai, against AI_ACCESS_PASSWORD
+#                 in the *running* container; with no such password set, the
+#                 gate can never open
+#   1 / true    — always on
+# The modules are bundled whatever the value; at 0 nothing renders them, and no
+# key or provider call is ever possible.
+ARG VITE_AI_ENABLED=0
+RUN VITE_AI_ENABLED="${VITE_AI_ENABLED}" npm run build
 
 # ── Stage 2: runtime (AnalysisBase + Flask + TopCPToolkit) ───────────────────
 ARG AB_TAG

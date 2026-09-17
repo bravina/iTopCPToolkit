@@ -122,7 +122,7 @@ function describe(v) {
   return Array.isArray(v) ? 'a list' : v === null ? 'null' : typeof v
 }
 
-function typeMismatch(expected, value) {
+export function typeMismatch(expected, value) {
   switch (expected) {
     case 'bool':  return typeof value !== 'boolean'
     case 'int':   return typeof value !== 'number' || !Number.isInteger(value)

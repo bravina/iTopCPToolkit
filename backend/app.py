@@ -10,6 +10,8 @@ GET  /api/examples            List the usable example configs
 GET  /api/examples/<path>     Content of one example, `include:` already resolved
 POST /api/generate-intnote    Runs generateConfigInformation.py on a JSON file,
                               compiles the resulting .tex to PDF, returns both
+GET  /api/ai-access           Is an AI-assistant password configured here?
+POST /api/ai-access           Check one attempt at that password
 
 The schema is built once at startup by walking the live ConfigFactory
 (see introspect.py).  Athena is required: the app only runs inside the
@@ -19,6 +21,7 @@ AnalysisBase image.
 import base64
 import glob
 import hashlib
+import hmac
 import json
 import logging
 import os
@@ -26,6 +29,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 
 from flask import Flask, Response, jsonify, request, send_from_directory
 from flask_cors import CORS
@@ -310,6 +314,93 @@ def generate_intnote():
             "pdf": base64.b64encode(pdf_bytes).decode(),
             "tex": tex_content, "stdout": script_stdout, "stderr": script_stderr,
         })
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# AI assistant soft-launch gate
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# This gates *knowledge of the password*, not use of the assistant.  Every AI
+# request goes browser → provider directly and never reaches Flask, so there is
+# nothing here to enforce: all this does is keep the shared secret out of the
+# JavaScript bundle, so that forwarding the URL does not also hand the feature
+# on.  The assistant's modules are in the bundle either way, and the unlock it
+# grants is a flag in the browser — anyone willing to open devtools can set it
+# themselves.  That is acceptable because the assistant is bring-your-own-key:
+# an unauthorised user can spend no money of ours and reach no CERN service.
+#
+# Unset or empty AI_ACCESS_PASSWORD means the gate can never open, which is the
+# default: an image built without it ships no assistant at all.
+
+AI_PASSWORD_ENV = "AI_ACCESS_PASSWORD"
+
+# Per-IP failure throttle.  A plain dict on purpose: the app is one process, and
+# a password shared with a handful of people does not justify a dependency.  A
+# restart forgets it.
+_AI_FAIL_WINDOW_S = 60.0
+_AI_FAIL_LIMIT = 5
+_AI_FAIL_DELAY_S = 0.5
+_ai_failures = {}
+
+
+def _ai_password():
+    return os.environ.get(AI_PASSWORD_ENV) or ""
+
+
+def reset_ai_throttle():
+    """Forget every recorded failure (tests; also handy from a shell)."""
+    _ai_failures.clear()
+
+
+def _ai_recent_failures(ip, now):
+    recent = [t for t in _ai_failures.get(ip, ()) if now - t < _AI_FAIL_WINDOW_S]
+    if recent:
+        _ai_failures[ip] = recent
+    else:
+        _ai_failures.pop(ip, None)
+    return recent
+
+
+def _ai_record_failure(ip, now):
+    # Sweep first, so a public endpoint being scanned cannot grow the table
+    # without bound: every entry is stale timestamps only.
+    if len(_ai_failures) > 1000:
+        for other, times in list(_ai_failures.items()):
+            if all(now - t >= _AI_FAIL_WINDOW_S for t in times):
+                del _ai_failures[other]
+    _ai_failures.setdefault(ip, []).append(now)
+
+
+@app.route("/api/ai-access", methods=["GET", "POST"])
+def ai_access():
+    """
+    GET  → ``{"configured": bool}``: whether a password is set here, and nothing
+    more — enough for the frontend to decide between an unlock form and nothing.
+
+    POST ``{"password": …}`` → ``{"ok": true}`` or 401.  The comparison is
+    constant-time; neither the password nor the attempt is logged or echoed
+    back, and no response ever carries the configured value.
+    """
+    secret = _ai_password()
+    if request.method == "GET":
+        return jsonify({"configured": bool(secret)})
+
+    ip = request.remote_addr or "unknown"
+    now = time.monotonic()
+    if len(_ai_recent_failures(ip, now)) >= _AI_FAIL_LIMIT:
+        return jsonify({"error": "Too many attempts — wait a minute and try again."}), 429
+
+    payload = request.get_json(force=True, silent=True) or {}
+    supplied = payload.get("password")
+    ok = bool(secret) and isinstance(supplied, str) and hmac.compare_digest(
+        supplied.encode("utf-8"), secret.encode("utf-8"))
+
+    if not ok:
+        _ai_record_failure(ip, now)
+        time.sleep(_AI_FAIL_DELAY_S)          # blunt the rate of guessing
+        logger.info("AI access: attempt rejected (%s)", ip)
+        return jsonify({"error": "That password is not right."}), 401
+    return jsonify({"ok": True})
 
 
 @app.route("/", defaults={"path": ""})

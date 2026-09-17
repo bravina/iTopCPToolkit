@@ -46,6 +46,11 @@ function reducer(state, action) {
     case 'LOAD':
       return action.state
 
+    // An AI proposal: every operation replayed onto `present`, so the history
+    // wrapper below records the whole set as a single undoable entry.
+    case 'APPLY_OPS':
+      return (action.actions || []).reduce((s, a) => reducer(s, a), state)
+
     case 'TOGGLE_BLOCK':
       return updateBlock(state, action.name, b => ({ ...b, enabled: !b.enabled }))
 
@@ -185,6 +190,7 @@ export function useConfig() {
   const actions = useMemo(() => ({
     init: (blocks) => dispatch({ type: 'INIT', blocks }),
     load: (state) => dispatch({ type: 'LOAD', state }),
+    applyOps: (actions) => dispatch({ type: 'APPLY_OPS', actions }),
     toggleBlock: (name) => dispatch({ type: 'TOGGLE_BLOCK', name }),
     setBlockEnabled: (name, enabled) => dispatch({ type: 'SET_BLOCK_ENABLED', name, enabled }),
     setOption: (blockName, instanceId, key, value) =>

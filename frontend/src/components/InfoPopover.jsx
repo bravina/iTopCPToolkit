@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
+import { useExplain } from '../contexts/ExplainContext.js'
 
 /**
  * A small ⓘ button that shows a markdown+LaTeX popover on hover/focus.
@@ -14,10 +15,40 @@ import rehypeKatex from 'rehype-katex'
  *
  * Uses position:fixed with measured coordinates so it is never clipped
  * by overflow:hidden/auto ancestor containers, and never goes off-screen.
+ *
+ * With an `explain` locator it also carries the "Explain this" action, which
+ * hands the assistant exactly what the bubble is describing.  Click only:
+ * every request spends the user's own API credit, so it never fires on hover.
  */
 const CLOSE_DELAY = 150
 
-export default function InfoPopover({ info }) {
+/**
+ * The action inside the bubble.  Nothing when the build has no assistant; an
+ * invitation to connect when there is no key yet — never a dead control.
+ */
+export function ExplainAction({ locator, status, onExplain, onConnect, onDone }) {
+  if (!locator || status === 'off') return null
+
+  const ready = status === 'ready'
+  return (
+    <div className="mt-2 pt-2 border-t border-slate-300 dark:border-slate-600">
+      <button
+        type="button"
+        onClick={() => { if (ready) onExplain?.(locator); else onConnect?.(); onDone?.() }}
+        title={ready
+          ? 'Ask the assistant about this — one request, on your own API key'
+          : 'Connect an assistant with your own API key to ask about this'}
+        className="w-full text-left text-xs px-1.5 py-1 rounded text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors"
+      >
+        ✨ Explain this
+        {!ready && <span className="text-slate-500"> — connect an assistant</span>}
+      </button>
+    </div>
+  )
+}
+
+export default function InfoPopover({ info, explain = null }) {
+  const { status = 'off', explain: ask, connect } = useExplain()
   const [open, setOpen] = useState(false)
   const [pinned, setPinned] = useState(false)
   const [style, setStyle] = useState({})
@@ -143,7 +174,8 @@ export default function InfoPopover({ info }) {
   // Never leave a timer behind.
   useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current) }, [])
 
-  if (!info) return null
+  // A block with no docstring still has something to explain.
+  if (!info && !(explain && status !== 'off')) return null
 
   return (
     <span className="relative inline-flex items-center">
@@ -187,7 +219,7 @@ export default function InfoPopover({ info }) {
               📌
             </button>
           )}
-          <ReactMarkdown
+          {info && <ReactMarkdown
             remarkPlugins={[remarkMath]}
             rehypePlugins={[rehypeKatex]}
             components={{
@@ -204,7 +236,9 @@ export default function InfoPopover({ info }) {
             }}
           >
             {info}
-          </ReactMarkdown>
+          </ReactMarkdown>}
+          <ExplainAction locator={explain} status={status}
+            onExplain={ask} onConnect={connect} onDone={closeNow} />
         </div>
       )}
     </span>

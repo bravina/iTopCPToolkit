@@ -1,0 +1,121 @@
+# Concept glossary — the physics the schema cannot supply.
+#
+# `list_blocks` / `describe_block` answer exactly what an option *is*, from the
+# live factory.  What they cannot say is what it is *for*.  That is what lives
+# here: a small, hand-written, versioned set of explainers.
+#
+# The content is a physicist's to write, not the app's and not the model's.
+# Every entry carries `reviewed:`; the assistant flags `reviewed: false` as
+# provisional instead of presenting it as settled.
+#
+# Rules for whoever edits this file:
+#   - one entry per concept that actually recurs in a TopCPToolkit config;
+#   - short — two or three sentences a field, not an essay;
+#   - `aliases` are match keys, not prose: option names, block names, the words
+#     a student would actually type.  They only ever widen matching;
+#   - an empty field is deliberate and honest — it means nobody has written it
+#     yet.  Leave it empty rather than guessing.  Nothing here should state a
+#     working-point name, an efficiency number or a current ATLAS
+#     recommendation that has not been checked against the source;
+#   - where an entry exists only because an upstream docstring is thin, say so
+#     in the entry, so it can be retired when upstream improves;
+#   - `reviewed: true` only once a physicist has read the entry.
+#
+# The four entries below are scaffolding: the mechanism is complete, the
+# content is not.  All are `reviewed: false`.
+
+version: 1
+
+entries:
+  - id: jvt
+    aliases: [JVT, jvtWP, runJvtSelection, runNNJvtUpdate, NNJvt, Jets.JVT, jet vertex tagger, pileup jets]
+    title: Jet Vertex Tagger
+    what: |
+      JVT judges whether a reconstructed jet came from the hard-scatter vertex
+      or from another proton-proton collision in the same bunch crossing, by
+      comparing the tracks associated with the jet against the tracks of each
+      vertex.  It applies only to jets inside the tracking acceptance, and
+      TopCPToolkit exposes it as a selection registered on the jet container
+      rather than as a change to the jets themselves.
+    why: |
+      Additional proton-proton interactions produce extra low-momentum jets.
+      Without a hard-scatter/pileup discriminant those jets enter the analysis
+      as though they belonged to the collision of interest, inflating jet
+      multiplicities and everything counted or summed from them.
+    choosing: ''
+    pitfalls: |
+      The selection JVT defines only takes effect where it is referenced: a
+      block that uses the bare jet container rather than the container's JVT
+      selection sees the unfiltered jets.
+    see_also: [pileup, systematics]
+    refs: []
+    reviewed: false
+
+  - id: pileup
+    aliases: [pileup, pile-up, PileupReweighting, in-time pileup, out-of-time pileup, mu]
+    title: Pileup
+    what: |
+      Pileup is the additional proton-proton interactions recorded alongside
+      the collision that fired the trigger — in-time pileup from the same bunch
+      crossing, out-of-time pileup from neighbouring ones.  Simulation is
+      produced with an assumed pileup profile, which in general does not match
+      the profile of the data being analysed.
+    why: |
+      Pileup adds tracks, calorimeter energy and whole jets to the event, so it
+      reaches jet counting, isolation and missing transverse momentum alike.
+      Reweighting simulation to the profile of the data is what makes
+      distributions that depend on it comparable between the two.
+    choosing: ''
+    pitfalls: ''
+    see_also: [jvt]
+    refs: []
+    reviewed: false
+
+  - id: flavour-tagging
+    aliases: [b-tagging, btagging, b tagging, b-jet, flavour tagging, flavor tagging, ftag, ftagAlgorithms, JET_N_BTAG]
+    title: Flavour tagging (b-tagging)
+    what: |
+      Flavour tagging estimates whether a jet contains a b-hadron from the
+      tracks inside it: a b-hadron travels a measurable distance before
+      decaying, leaving a displaced vertex and tracks with large impact
+      parameters.  A configuration names a tagger and a working point — the
+      threshold applied to that tagger's output.
+    why: |
+      A top quark decays to a W boson and a b quark, so requiring tagged jets
+      separates top processes from backgrounds whose jets are light-flavour.
+      The tagging decision is simulated imperfectly, which is why a working
+      point is used together with its calibration rather than on its own.
+    choosing: |
+      A tighter working point rejects more light-flavour and charm jets and
+      keeps fewer b-jets; a looser one does the reverse.  Which taggers and
+      working points exist, which are calibrated and which are currently
+      recommended is an ATLAS decision that changes over time — take those
+      names from `describe_block` and from the current recommendation, never
+      from this entry.
+    pitfalls: ''
+    see_also: [systematics]
+    refs: []
+    reviewed: false
+
+  - id: systematics
+    aliases: [systematics, systematic variations, systematic uncertainties, "%SYS%", NOSYS, systematicsModelJES]
+    title: Systematic variations
+    what: |
+      The CP algorithms express a systematic uncertainty as a named variation
+      of the event: the sequence runs again with one calibration or efficiency
+      shifted, and the affected containers and branches carry that variation's
+      name where the `%SYS%` placeholder appears.  The unshifted pass is
+      `NOSYS`.
+    why: |
+      Because a variation is a complete alternative pass over the analysis, a
+      shift propagates through selection, overlap removal and the observables
+      by construction, instead of being estimated afterwards on the result.
+    choosing: |
+      Every variation costs time per event and space in the output, so blocks
+      expose options controlling how finely a family of uncertainties is split
+      — a per-component set or a grouped one.  Consult `describe_block` for the
+      options a given block offers.
+    pitfalls: ''
+    see_also: []
+    refs: []
+    reviewed: false

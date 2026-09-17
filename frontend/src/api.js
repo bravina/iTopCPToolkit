@@ -41,3 +41,30 @@ export async function fetchExample(path) {
   if (!resp.ok) throw new Error(`Cannot load example '${path}' (HTTP ${resp.status})`)
   return resp.text()
 }
+
+/**
+ * GET /api/ai-access → whether an assistant password is configured on this
+ * server.  A boolean and nothing else; a network failure reads as "no gate".
+ */
+export async function aiGateConfigured() {
+  try {
+    const resp = await fetch(`${API_BASE}/api/ai-access`)
+    if (!resp.ok) return false
+    return (await resp.json()).configured === true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * POST /api/ai-access → true when the password is right.  Throws with the
+ * backend's own message (wrong password, or throttled) so the form can show it.
+ */
+export async function checkAiAccess(password) {
+  const data = await asJson(await fetch(`${API_BASE}/api/ai-access`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password }),
+  }))
+  return data.ok === true
+}

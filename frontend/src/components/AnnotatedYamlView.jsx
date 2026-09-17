@@ -1,5 +1,7 @@
 import { useEffect, useRef } from 'react'
 import InfoPopover from './InfoPopover.jsx'
+import { useExplain } from '../contexts/ExplainContext.js'
+import { blockLocator, locatorFromPath } from '../ai/explain.js'
 import { buildLines, renderPrefix } from '../utils/yamlLineBuilder.js'
 import { buildIssueMap } from '../utils/yamlValidator.js'
 
@@ -25,8 +27,15 @@ function valueClass(rawValue, isDefault) {
   return 'text-slate-700 dark:text-slate-300'
 }
 
+/** The block's class docstrings, as BlockPanel shows them. */
+function blockDocstring(def) {
+  return (def.classes || []).map(c => (typeof c === 'string' ? '' : c?.docstring)).filter(Boolean).join('\n\n')
+}
+
 // ── Single rendered line ────────────────────────────────────────────────────
 function YamlLine({ line, issueMap, diffMap, scrollRef }) {
+  const { status } = useExplain()
+  const canExplain = status !== 'off'
   const prefix = renderPrefix(line.indent, line.isListStart)
   const issues = issueMap?.[line.path] ?? []
   const diff = diffMap?.[line.path]
@@ -48,6 +57,10 @@ function YamlLine({ line, issueMap, diffMap, scrollRef }) {
                  : line.type === 'block-header' ? 'text-slate-900 dark:text-slate-100 font-bold'
                  : 'text-slate-700 dark:text-slate-300'
 
+  const info = line.optInfo?.info || (line.subInfo?.def?.label ? `**${line.subInfo.def.label}** sub-block` : '')
+  const explain = canExplain && (line.optInfo || line.subInfo) ? locatorFromPath(line.path) : null
+  const bubble = !!info || !!explain
+
   if (line.type === 'blank') {
     return <div className="h-3" />
   }
@@ -65,6 +78,10 @@ function YamlLine({ line, issueMap, diffMap, scrollRef }) {
         <span className="text-slate-400 dark:text-slate-700 select-none w-7 text-right text-xs shrink-0 mr-1">{line.lineNum}</span>
         <span className={`font-mono text-sm font-bold ${keyClass}`}>{line.key}</span>
         <span className="font-mono text-sm text-slate-500">:</span>
+        {line.blockDef && (
+          <InfoPopover info={blockDocstring(line.blockDef)}
+            explain={canExplain ? blockLocator(line.blockDef.name) : null} />
+        )}
         {blockLabel && (
           <span className="text-xs text-slate-400 dark:text-slate-600 ml-2 italic">#{blockLabel}</span>
         )}
@@ -92,11 +109,10 @@ function YamlLine({ line, issueMap, diffMap, scrollRef }) {
           <span className="flex items-center shrink-0">
             <span className={keyClass}>{line.key}</span>
             <span className="text-slate-500">:&nbsp;</span>
-            {(line.optInfo?.info || line.subInfo?.def?.label) && (
-              <InfoPopover info={line.optInfo?.info ?? `**${line.subInfo.def.label}** sub-block`} />
-            )}
-            {/* Spacer so values don't jump when no info bubble */}
-            {!line.optInfo?.info && !line.subInfo?.def?.label && (
+            {bubble ? (
+              <InfoPopover info={info} explain={explain} />
+            ) : (
+              /* Spacer so values don't jump when no info bubble */
               <span className="w-[1.1rem] inline-block select-none" />
             )}
           </span>

@@ -10,14 +10,15 @@ An interactive web GUI for building [TopCPToolkit](https://topcptoolkit.docs.cer
 
 1. [What the app does](#what-the-app-does)
 2. [Architecture](#architecture)
-3. [Where the blocks come from](#where-the-blocks-come-from)
-4. [Running locally](#running-locally)
-5. [Deployment](#deployment)
-6. [Testing](#testing)
-7. [Metadata the GUI understands](#metadata-the-gui-understands)
-8. [How to add a new application mode](#how-to-add-a-new-application-mode)
-9. [Code map](#code-map)
-10. [Contributing](#contributing)
+3. [AI assistant](#ai-assistant)
+4. [Where the blocks come from](#where-the-blocks-come-from)
+5. [Running locally](#running-locally)
+6. [Deployment](#deployment)
+7. [Testing](#testing)
+8. [Metadata the GUI understands](#metadata-the-gui-understands)
+9. [How to add a new application mode](#how-to-add-a-new-application-mode)
+10. [Code map](#code-map)
+11. [Contributing](#contributing)
 
 ---
 
@@ -56,6 +57,9 @@ accepts. Nothing about blocks, options or defaults is hand-maintained.
 fetches the schema once and does editing, serialisation, validation and
 autocomplete in the browser.
 
+**AI assistant** (`ai/`, off by default): an optional chat panel in the
+Builder, grounded in the app's own data.  See *AI assistant* below.
+
 **Light and dark** (`hooks/useTheme.js`): the header's ☀/☾ control cycles
 system → light → dark, and the choice is remembered in `localStorage`.  The
 default, *system*, follows `prefers-color-scheme` and re-follows it live when
@@ -63,6 +67,81 @@ the OS switches.  Tailwind runs in `darkMode: 'class'`: light is the base
 palette and every dark rule is a `dark:` variant, keyed off a `dark` class on
 `<html>` that `index.html` also sets before the first paint (no white flash).
 When adding UI, write both — e.g. `bg-white dark:bg-slate-900`.
+
+---
+
+## AI assistant
+
+An optional assistant lives in the Builder's preview column.  It is **not** a
+documentation chatbot: the model is given tools backed by what the app already
+holds in memory, so anything it says about syntax comes from a tool result
+rather than from recall.
+
+| Tool | Backed by |
+|---|---|
+| `list_blocks(filter, category, enabledOnly)` | the effective schema (base blocks + `AddConfigBlocks`) |
+| `describe_block(name)` | one block or `Parent.SubBlock`: options, types, defaults, requiredness, choices, units, docstrings |
+| `list_examples()` / `read_example(path)` | the reference configs (`/api/examples`) |
+| `current_config()` | the builder state through `utils/yamlSerializer.js` |
+| `validate_config()` | `utils/yamlValidator.js` + `utils/dependencyChecker.js` |
+
+The whole loop runs in the browser (`ai/chat.js`): the backend is not involved
+and holds no state for it.  Requests go straight to the provider the user
+picked — Anthropic (with `anthropic-dangerous-direct-browser-access`), OpenAI,
+Google Gemini, or a local Ollama — with the user's own key, which is kept in
+`sessionStorage` and never sent to the Flask app.  Model lists are fetched from
+each provider; the pinned lists in `ai/providers.js` are only the fallback.
+
+### Turning it on
+
+**It is off unless the build turns it on.** `VITE_AI_ENABLED` is baked in by
+Vite, so the image decides at build time; it has three states:
+
+| `VITE_AI_ENABLED` | What the app does |
+|---|---|
+| `0`, unset, or anything unrecognised | No AI UI renders anywhere: no 🤖 button in the Builder, no panel in the Reader, no "Explain this" in any ⓘ popover.  The default, and what a dev server also gets at an explicit `0`. |
+| `gated` | The same — until this browser is unlocked at **`/withai`** with the password the backend holds.  For a soft launch: hand out the link and the password together. |
+| `1` / `true` (and a dev server by default) | Always available.  The Builder shows one 🤖 button until a provider is connected. |
+
+`aiEnabled()` in `ai/settings.js` is the single decision every AI affordance
+hangs off.  The modules are in the bundle in all three states; at `0` nothing
+renders them, and no key or provider call is ever possible.
+
+```bash
+# The whole app, assistant included, on http://localhost:5001
+VITE_AI_ENABLED=1 ./build_and_serve.sh
+
+# Soft launch: compiled in, but behind a password
+VITE_AI_ENABLED=gated AI_ACCESS_PASSWORD='the shared password' ./build_and_serve.sh
+
+# Or the frontend alone
+cd frontend && VITE_AI_ENABLED=gated npm run build
+```
+
+### The `gated` state, and what it is worth
+
+The password lives only in the backend's `AI_ACCESS_PASSWORD` environment
+variable, read at request time:
+
+| Route | |
+|---|---|
+| `GET /api/ai-access` | `{"configured": …}` — a boolean saying whether a password is set here, and nothing else |
+| `POST /api/ai-access` `{"password": …}` | `{"ok": true}`, or 401 with a plain "That password is not right."  Constant-time comparison; after 5 failures from one IP within a minute, 429 until the minute is out, and every failure costs half a second. |
+
+**If `AI_ACCESS_PASSWORD` is unset or empty the gate can never open** — so an
+image built without it ships no assistant, whatever `VITE_AI_ENABLED` says.
+The password is never logged, never echoed back, and appears in no endpoint
+(`/api/health` included).  A success is remembered in `localStorage`, so the
+normal URL works from then on; returning to `/withai` offers "Lock again".
+
+**Be clear about what this is.**  Every AI request goes from the browser
+straight to the provider and never touches Flask, so the backend cannot enforce
+access — it gates *knowledge of the password*, not use of the feature.  The
+assistant's code is in the bundle either way and the unlock is a flag in the
+browser, so anyone willing to open devtools can set it themselves.  This is a
+soft-launch gate, not access control.  It is adequate here only because the
+assistant is bring-your-own-key: an uninvited user can spend no money of ours
+and reach no CERN service.
 
 ---
 
@@ -164,10 +243,22 @@ docker build \
   --build-arg TCT_VERSION=v3.7.0 \
   -t tct-gui .
 
+# Build with the AI assistant compiled in (see "AI assistant" above)
+docker build --build-arg VITE_AI_ENABLED=1 --build-arg AB_TAG=25.2.110 -t tct-gui .
+
 # Run
 docker run --name tct-gui-app -p 5001:5000 tct-gui
 # Open http://localhost:5001
+
+# Or compiled in behind the /withai password: the build arg decides the UI,
+# the environment variable is what the running container checks against.
+docker build --build-arg VITE_AI_ENABLED=gated -t tct-gui .
+docker run --name tct-gui-app -p 5001:5000 -e AI_ACCESS_PASSWORD='…' tct-gui
 ```
+
+`./build_and_serve.sh` does the build-and-run in one step and honours
+`AB_TAG`, `TCT_VERSION`, `TCT_EXAMPLES_REF`, `CERN_TOKEN`, `VITE_AI_ENABLED`
+and `AI_ACCESS_PASSWORD` from the environment.
 
 ---
 
@@ -197,6 +288,11 @@ To release a new version, update `VERSION` and push to `main`.
 | `TCT_REPO` | Variable | TopCPToolkit repository, optional (default `gitlab.cern.ch/atlas/amg/software/TopCPToolkit.git`) |
 | `TCT_EXAMPLES_REPO` | Variable | TopCPToolkit_Examples repository, optional |
 | `TCT_EXAMPLES_REF` | Variable | Branch/tag of TopCPToolkit_Examples, optional (default `main`) |
+| `VITE_AI_ENABLED` | Variable | AI assistant, optional (default `gated`: compiled in, hidden until `/withai`). Set to `0` to leave it out |
+
+The gate only opens where the *running* deployment also sets
+`AI_ACCESS_PASSWORD` — see [AI assistant](#ai-assistant).  Without it a `gated`
+image shows no assistant at all, which is the safe direction.
 
 ### One-time OKD setup
 
@@ -238,6 +334,13 @@ docker run --rm -v "$PWD:/src" -w /src/backend \
 package*: the module an `AddConfigBlocks` entry points at (TopCPToolkit in
 production, which a plain AnalysisBase image does not have). It uses nothing
 but the public `ConfigBlock` / `groupBlocks` API.
+
+`tests/test_ai_access.py` is the exception: the AI gate is a string comparison
+and a throttle, so it needs no Athena and can be run anywhere.
+
+```bash
+PYTHONPATH=backend pytest backend/tests/test_ai_access.py --noconftest -v
+```
 
 ### Frontend (no Docker needed)
 
@@ -339,6 +442,15 @@ frontend/src/
     ModeSelector.jsx, SplashScreen.jsx, InfoPopover.jsx, YamlLoader.jsx,
     ResizablePanels.jsx, MobileLayout.jsx, IntNoteWriter.jsx
     ThemeToggle.jsx        Header control cycling system → light → dark
+    AiChatPanel.jsx        AI assistant chat (Builder preview column)
+    AiSettingsModal.jsx    Provider / model / API-key setup
+    AiUnlock.jsx           The /withai soft-launch unlock form (gated builds only)
+  ai/
+    tools.js           Schema, config, examples and validation exposed as LLM tools
+    providers.js       Anthropic / OpenAI / Gemini / Ollama adapters, called from the browser
+    chat.js            The tool-use loop
+    systemPrompt.js    What the assistant is for
+    settings.js        Build state (off / gated / on), unlock flag, provider preference, key in sessionStorage
   hooks/
     useConfig.js       Reducer for the builder state with undo/redo
     useTheme.js        Colour-scheme preference (localStorage + `dark` class)

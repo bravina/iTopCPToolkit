@@ -7,6 +7,9 @@
 import { defineConfig } from 'vite'
 
 export default defineConfig({
+  // Components are rendered to static markup in a few tests; esbuild needs the
+  // automatic JSX runtime for that, since the React plugin is not loaded here.
+  esbuild: { jsx: 'automatic' },
   test: {
     environment: 'node',
     include: ['src/__tests__/**/*.test.js'],

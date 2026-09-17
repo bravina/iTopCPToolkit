@@ -1,4 +1,5 @@
 import InfoPopover from './InfoPopover.jsx'
+import { blockLocator } from '../ai/explain.js'
 import OptionList from './OptionList.jsx'
 import SubBlockSection from './SubBlockSection.jsx'
 
@@ -25,7 +26,7 @@ export default function BlockPanel({
           {blockDef.kind === 'group' && (
             <span className="text-xs px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400" title="A @groupBlocks entry: options are the union of several ConfigBlocks">group</span>
           )}
-          {docstring && <InfoPopover info={docstring} />}
+          <InfoPopover info={docstring} explain={blockLocator(blockDef.name)} />
         </div>
         <p className="text-xs text-slate-500 font-mono mt-0.5 truncate" title={blockDef.classes?.map(c => `${c.module}.${c.cls}`).join('\n')}>
           {blockDef.factoryName}

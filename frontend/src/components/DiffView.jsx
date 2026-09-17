@@ -7,9 +7,16 @@ import { computeDiff } from '../utils/yamlLineBuilder.js'
  * Side-by-side diff of two YAML configs.
  * ConfigA is the "base", configB is the "new" one.
  * Lines in the diff map are colored accordingly in each view.
+ *
+ * With no `configB` the second config is loaded from a file (Reader mode);
+ * supplied one — an AI proposal — the loader is skipped altogether.
  */
-export default function DiffView({ configA, blocks, onClose }) {
-  const [configB, setConfigB] = useState(null)
+export default function DiffView({
+  configA, configB: suppliedB, blocks, onClose,
+  labelA = 'A — Base', labelB = 'B — Comparison', closeLabel = '✕ Exit diff',
+}) {
+  const [loadedB, setLoadedB] = useState(null)
+  const configB = suppliedB ?? loadedB
 
   if (!configB) {
     return (
@@ -25,7 +32,7 @@ export default function DiffView({ configA, blocks, onClose }) {
             ✕ Cancel diff
           </button>
         </div>
-        <YamlLoader onLoad={setConfigB} label="Load Config B (comparison target)" />
+        <YamlLoader onLoad={setLoadedB} label="Load Config B (comparison target)" />
       </div>
     )
   }
@@ -66,19 +73,21 @@ export default function DiffView({ configA, blocks, onClose }) {
           {!Object.keys(diff).length && <span className="text-slate-600 dark:text-slate-400 italic">Configs are identical</span>}
         </div>
 
-        <button
-          type="button"
-          onClick={() => setConfigB(null)}
-          className="ml-auto text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 px-2 py-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700"
-        >
-          Load different B
-        </button>
+        {!suppliedB && (
+          <button
+            type="button"
+            onClick={() => setLoadedB(null)}
+            className="ml-auto text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 px-2 py-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700"
+          >
+            Load different B
+          </button>
+        )}
         <button
           type="button"
           onClick={onClose}
-          className="text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 px-2 py-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700"
+          className={`${suppliedB ? 'ml-auto ' : ''}text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 px-2 py-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700`}
         >
-          ✕ Exit diff
+          {closeLabel}
         </button>
       </div>
 
@@ -86,13 +95,13 @@ export default function DiffView({ configA, blocks, onClose }) {
       <div className="flex flex-1 overflow-hidden divide-x divide-slate-200 dark:divide-slate-700">
         <div className="flex flex-col flex-1 overflow-hidden min-w-0">
           <div className="px-4 py-1 bg-slate-100/60 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-600 dark:text-slate-400 shrink-0">
-            A — Base
+            {labelA}
           </div>
           <AnnotatedYamlView configObj={configA} blocks={blocks} diffMap={diffMapA} />
         </div>
         <div className="flex flex-col flex-1 overflow-hidden min-w-0">
           <div className="px-4 py-1 bg-slate-100/60 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-600 dark:text-slate-400 shrink-0">
-            B — Comparison
+            {labelB}
           </div>
           <AnnotatedYamlView configObj={configB} blocks={blocks} diffMap={diffMapB} />
         </div>

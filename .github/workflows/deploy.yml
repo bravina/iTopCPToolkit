@@ -33,6 +33,10 @@ jobs:
           [ -n "${{ vars.TCT_REPO }}" ] && ARGS="${ARGS}TCT_REPO=${{ vars.TCT_REPO }}\n"
           [ -n "${{ vars.TCT_EXAMPLES_REPO }}" ] && ARGS="${ARGS}TCT_EXAMPLES_REPO=${{ vars.TCT_EXAMPLES_REPO }}\n"
           [ -n "${{ vars.TCT_EXAMPLES_REF }}" ] && ARGS="${ARGS}TCT_EXAMPLES_REF=${{ vars.TCT_EXAMPLES_REF }}\n"
+          # The AI assistant ships compiled in but hidden: it appears only for a
+          # browser unlocked at /withai, and only while the deployment sets
+          # AI_ACCESS_PASSWORD.  Set the VITE_AI_ENABLED variable to 0 to drop it.
+          ARGS="${ARGS}VITE_AI_ENABLED=${{ vars.VITE_AI_ENABLED || 'gated' }}\n"
           echo "args<<EOF" >> $GITHUB_OUTPUT
           printf "$ARGS" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
