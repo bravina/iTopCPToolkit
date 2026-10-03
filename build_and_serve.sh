@@ -20,8 +20,8 @@
 # it is bring-your-own-key, so the image ships no credentials either way.
 #
 # Defaults, with any CR removed.
-AB_TAG="${AB_TAG:-25.2.110}";                 AB_TAG="${AB_TAG//$'\r'/}"
-TCT_VERSION="${TCT_VERSION:-v3.7.0}";         TCT_VERSION="${TCT_VERSION//$'\r'/}"
+AB_TAG="${AB_TAG:-25.2.113}";                 AB_TAG="${AB_TAG//$'\r'/}"
+TCT_VERSION="${TCT_VERSION:-v3.8.0}";         TCT_VERSION="${TCT_VERSION//$'\r'/}"
 TCT_EXAMPLES_REF="${TCT_EXAMPLES_REF:-main}"; TCT_EXAMPLES_REF="${TCT_EXAMPLES_REF//$'\r'/}"
 VITE_AI_ENABLED="${VITE_AI_ENABLED:-0}";      VITE_AI_ENABLED="${VITE_AI_ENABLED//$'\r'/}"
 

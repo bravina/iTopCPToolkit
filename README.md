@@ -174,7 +174,7 @@ There are three sources, mirroring how a TopCPToolkit YAML file works:
    Two trees are scanned (see *Example configs* below): the configs shipped
    with the TopCPToolkit build, and the
    [TopCPToolkit_Examples](https://gitlab.cern.ch/atlas/amg/software/topcptoolkit_examples)
-   checkout. The latter matters since TCT v3.7.0, which ships only its CI
+   checkout. The latter matters since TCT v3.8.0, which ships only its CI
    configs: most custom blocks (KLFitter, HyPER, VyPER, NeutrinoWeighter, …)
    are declared only in the examples repository now. Blocks declared nowhere
    are still reachable through "Add custom block…" below.
@@ -191,7 +191,7 @@ of every config directory found in
 
 | Source | Where | Notes |
 |---|---|---|
-| `TopCPToolkit` | `<build>/x86_64*/data/TopCPToolkit/configs/**` | since v3.7.0 just the CI configs |
+| `TopCPToolkit` | `<build>/x86_64*/data/TopCPToolkit/configs/**` | since v3.8.0 just the CI configs |
 | `Examples` | `/opt/TopCPToolkit_Examples/Analysis/<group>/<config>/` | ATLAS-internal, needs `CERN_TOKEN` at build time |
 
 Before an example is offered it is put through two steps:
@@ -224,12 +224,12 @@ HTTP 503. Build and run the Docker image.
 
 ```bash
 # Build without TopCPToolkit (AnalysisBase blocks only)
-docker build --build-arg AB_TAG=25.2.110 -t tct-gui .
+docker build --build-arg AB_TAG=25.2.113 -t tct-gui .
 
 # Build with a specific TopCPToolkit version (adds the TCT catalogue, templates and INTnote Writer)
 docker build \
-  --build-arg AB_TAG=25.2.110 \
-  --build-arg TCT_VERSION=v3.7.0 \
+  --build-arg AB_TAG=25.2.113 \
+  --build-arg TCT_VERSION=v3.8.0 \
   -t tct-gui .
 
 # TopCPToolkit (gitlab.cern.ch/atlas/amg/software/TopCPToolkit) is public, so no
@@ -239,12 +239,12 @@ export CERN_TOKEN=glpat-xxxxxxxxxxxx
 docker build \
   --secret id=cern_token,env=CERN_TOKEN \
   --build-arg TCT_REPO=gitlab.cern.ch/<you>/TopCPToolkit.git \
-  --build-arg AB_TAG=25.2.110 \
-  --build-arg TCT_VERSION=v3.7.0 \
+  --build-arg AB_TAG=25.2.113 \
+  --build-arg TCT_VERSION=v3.8.0 \
   -t tct-gui .
 
 # Build with the AI assistant compiled in (see "AI assistant" above)
-docker build --build-arg VITE_AI_ENABLED=1 --build-arg AB_TAG=25.2.110 -t tct-gui .
+docker build --build-arg VITE_AI_ENABLED=1 --build-arg AB_TAG=25.2.113 -t tct-gui .
 
 # Run
 docker run --name tct-gui-app -p 5001:5000 tct-gui
@@ -283,8 +283,8 @@ To release a new version, update `VERSION` and push to `main`.
 | `CERN_REGISTRY_USER` | Secret | Harbor registry username |
 | `CERN_REGISTRY_TOKEN` | Secret | Harbor CLI secret (from registry.cern.ch → User Profile) |
 | `CERN_TOKEN` | Secret | CERN GitLab PAT — needed for the (ATLAS-internal) example configs, and for a private TopCPToolkit fork |
-| `AB_TAG` | Variable | AnalysisBase tag (e.g. `25.2.110`), optional |
-| `TCT_VERSION` | Variable | TopCPToolkit version (e.g. `v3.7.0`), optional |
+| `AB_TAG` | Variable | AnalysisBase tag (e.g. `25.2.113`), optional |
+| `TCT_VERSION` | Variable | TopCPToolkit version (e.g. `v3.8.0`), optional |
 | `TCT_REPO` | Variable | TopCPToolkit repository, optional (default `gitlab.cern.ch/atlas/amg/software/TopCPToolkit.git`) |
 | `TCT_EXAMPLES_REPO` | Variable | TopCPToolkit_Examples repository, optional |
 | `TCT_EXAMPLES_REF` | Variable | Branch/tag of TopCPToolkit_Examples, optional (default `main`) |
@@ -323,7 +323,7 @@ without it `conftest.py` aborts collection with an explanatory error.
 
 ```bash
 docker run --rm -v "$PWD:/src" -w /src/backend \
-  gitlab-registry.cern.ch/atlas/athena/analysisbase:25.2.110 bash -c "
+  gitlab-registry.cern.ch/atlas/athena/analysisbase:25.2.113 bash -c "
     source /home/atlas/release_setup.sh &&
     python3 -m pip install --user flask flask-cors pyyaml pytest &&
     pytest tests/ -v
