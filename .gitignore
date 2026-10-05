@@ -9,3 +9,4 @@ uv.lock
 __pycache__/
 .pytest_cache/
 frontend/dist/
+package-lock.json
