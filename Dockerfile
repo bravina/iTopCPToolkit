@@ -2,8 +2,8 @@
 # ^^^ Required for --mount=type=secret support
 
 # ARG before the first FROM so it is usable in both FROM lines
-ARG AB_TAG=25.2.110
-ARG TCT_VERSION=v3.7.0
+ARG AB_TAG=25.2.113
+ARG TCT_VERSION=v3.8.0
 
 # ── Stage 1: build the React frontend ────────────────────────────────────────
 FROM --platform=$BUILDPLATFORM node:24-slim AS frontend-build
